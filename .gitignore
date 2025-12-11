@@ -1,0 +1,14 @@
+# --- DEPENDENCIES & BUILD ARTIFACTS ---
+# Exclude Node dependencies in ALL subfolders (Crucial)
+**/node_modules
+
+# Exclude build/dist folders that get created during compilation
+dist
+build
+/coverage
+
+# --- SENSITIVE DATA (CRITICAL) ---
+# Exclude ALL .env files in ALL subfolders
+# This prevents accidentally committing API keys, secrets, or DB credentials.
+**/.env
+.env.*
