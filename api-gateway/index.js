@@ -14,8 +14,6 @@ app.use(cors({
     // credentials: true
 }));
 
-app.use(express.json({ limit: '1mb' }));
-
 // Rate Limiting (fixed number of requests per minute per IP)
 app.use(limiter);
 

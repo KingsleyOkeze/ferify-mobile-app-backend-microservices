@@ -1,4 +1,5 @@
-const api = require("../configs/configs");
+const internalApi = require("../configs/internalApi");
+const googleMapsApi = require("../configs/googleMapApi");
 const redis = require("redis");
 
 const client = redis.createClient();
@@ -32,7 +33,7 @@ const placeSearchFunction = async (req, res) => {
         // --- GOOGLE API CALL ---
         
         // 3. FETCH FROM GOOGLE PLACES AUTOCOMPLETE
-        const response = await api.get(googleAutocompleteUrl, {
+        const response = await googleMapsApi.get(googleAutocompleteUrl, {
             params: {
                 // The user's text input
                 input: query, 
@@ -91,7 +92,7 @@ const getDistanceOfThisTwoLocationInKm = async (req, res) => {
     const cached = (await client.get(key)) || (await client.get(reverseKey));
 
     if (cached) {
-        console.log("📦 Returning cached distance");
+        console.log("Returning cached distance");
         return parseFloat(cached);
     }
 
@@ -103,14 +104,14 @@ const getDistanceOfThisTwoLocationInKm = async (req, res) => {
         const originString = `place_id:${startPlaceId}`;
         const destinationString = `place_id:${endPlaceId}`;
 
-        const routeResponse = await api.get(
+        const routeResponse = await googleMapsApi.get(
             directionsUrl,
             {
                 params: {
                     origin: originString,
                     destination: destinationString,
                     mode: 'driving', 
-                    key: GOOGLE_API_KEY,
+                    // key: GOOGLE_API_KEY,
                 }
             }
         );
@@ -140,11 +141,17 @@ const routeBreakdownFunction = async (req, res) => {
     // 1. INPUT VALIDATION & PARAMETER DESTRUCTURING
     // Safely extract required parameters (origin, destination) and set a default for optional 'mode'.
     const { origin, destination, mode = 'transit' } = req.body;
+    console.log('received routes for break down', origin, destination, mode);
+
+    // IMPORTANT: Basic check to ensure parameters were received
+    if (!origin || !destination) {
+        return res.status(400).json({ error: "Origin and Destination place_ids are required." });
+    }
 
     // 2. CONSTRUCT API URL
     // Build the complete Google Directions API URL using the user inputs and the secret API key.
     // The API_KEY must be stored securely as an environment variable (not shown here, but assumed).
-    const googleApiUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&mode=${mode}&key=${GOOGLE_API_KEY}`;
+    const googleApiUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=place_id:${origin}&destination=place_id:${destination}&mode=${mode}&key=${GOOGLE_API_KEY}`;
 
     try {
         // --- CACHING LOGIC (REDIS) ---
@@ -162,18 +169,15 @@ const routeBreakdownFunction = async (req, res) => {
             // 5. RETURN CACHED DATA
             // If cached data is found, log the action and immediately return the parsed JSON response,
             // bypassing the costly Google API call.
-            console.log("📦 Returning cached route breakdown data.");
-            // Note: In a production Express handler, you should use res.json() here.
-            // For a standalone function that returns the result, `return JSON.parse(cached);` works.
-            // Assuming this is an Express handler:
-            return res.json({ route: JSON.parse(cached) });
+            console.log("Returning cached route breakdown data.");
+            return res.status(200).json({ route: JSON.parse(cached) });
         }
         console.log("not found route break down in cache", cached)
         // --- GOOGLE API CALL ---
 
         // 6. FETCH DATA FROM GOOGLE API
         // If no cache hit, execute the external HTTP GET request to the Google Directions API.
-        const response = await api.get(googleApiUrl);
+        const response = await googleMapsApi.get(googleApiUrl);
         const data = response.data;
 
         // 7. HANDLE API ERRORS/NO ROUTES
@@ -216,13 +220,13 @@ const routeBreakdownFunction = async (req, res) => {
         // 11. SEND FINAL RESPONSE
         // Return the cleaned and formatted route breakdown data to the client (React Native app).
         console.log("route break down result", cleanRoute)
-        return res.json({ route: cleanRoute });
+        return res.status(200).json({ route: cleanRoute });
 
     } catch (error) {
         // 12. GENERAL ERROR HANDLING
         // Log the internal error and send a generic 500 status back to the client.
-        console.error("Google API Error:", error.message);
-        res.status(500).json({ error: 'Internal Server Error (Check logs for details).' });
+        console.error("Google API Error:", error.message, error);
+        return res.status(500).json({ error: 'Internal Server Error (Check logs for details).' });
     }
 };
 
