@@ -44,7 +44,7 @@ const placeSearchFunction = async (req, res) => {
                 // Optional: Focus on addresses and geographic places
                 types: 'geocode', 
             },
-            timeout: 60000, // Prevent hanging on slow Google response
+            timeout: 2500, // Prevent hanging on slow Google response
         });
         
         // 4. HANDLE API STATUS AND ERRORS

@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema(
 			type: String,
 			required: true,
 		},
+		userName: {
+			type: String,
+		},
 		email: {
 			type: String,
 			required: true,
@@ -21,14 +24,23 @@ const userSchema = new mongoose.Schema(
 			type: String,
 			required: true,
 		},
-		
+		location: {
+			type: String,
+		},
 		role: {
             type: String,
             required: true,
             enum: ["Admin"], // Only these two roles
             default: "Admin", // Default to "Admin" if no role is provided
         },
-		
+		linkedAccount: {
+			type: [String],
+			enum: ["Google", "Apple"]
+		},
+		deactivateAccount: {
+			type: Boolean,
+			default: false
+		},
 		verificationToken: {
 			type: String,
 		},
