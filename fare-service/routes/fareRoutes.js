@@ -6,8 +6,8 @@ const {
 
 const router = express.Router();
 
-// router.get('/estimate', getFareEstimateFunction);
-// router.post('/submit-price', submitFarePriceFunction);
+router.get('/estimate', getFareEstimateFunction);
+router.post('/submit-price', submitFarePriceFunction);
 
 
 module.exports = router;

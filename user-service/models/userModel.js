@@ -28,11 +28,11 @@ const userSchema = new mongoose.Schema(
 			type: String,
 		},
 		role: {
-            type: String,
-            required: true,
-            enum: ["Admin"], // Only these two roles
-            default: "Admin", // Default to "Admin" if no role is provided
-        },
+			type: String,
+			required: true,
+			enum: ["User", "Admin"], // Only these two roles
+			default: "User", // Default to "User" if no role is provided
+		},
 		linkedAccount: {
 			type: [String],
 			enum: ["Google", "Apple"]
@@ -56,6 +56,22 @@ const userSchema = new mongoose.Schema(
 			type: Date, // To track when the OTP will expire
 			default: null,
 		},
+		privacy: {
+			profileVisibility: {
+				type: String,
+				enum: ['public', 'private'],
+				default: 'public'
+			},
+			contributionVisibility: {
+				type: String,
+				enum: ['everyone', 'community', 'private'],
+				default: 'everyone'
+			},
+			shareLocationData: {
+				type: Boolean,
+				default: true
+			}
+		}
 	},
 	{ timestamps: true }
 );

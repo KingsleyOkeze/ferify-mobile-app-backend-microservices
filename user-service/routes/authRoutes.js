@@ -1,14 +1,15 @@
 const express = require("express");
-const { 
+const {
     loginFunction,
     signupStartFunction,
     signupVerifyOtpFunction,
     resendOtpFunction,
     signupCompleteFunction,
-	forgotPasswordFunction,
-	resetPasswordFunction,
-	refreshTokenFunction,
-	logoutFunction 
+    forgotPasswordFunction,
+    verifyForgotPasswordOtpFunction,
+    resetPasswordFunction,
+    refreshTokenFunction,
+    logoutFunction
 } = require("../controllers/authControllers");
 
 const router = express.Router();
@@ -21,7 +22,8 @@ router.post('/login', loginFunction);
 
 router.post('/register/resend-otp', resendOtpFunction);
 router.post('/register/forgot-password', forgotPasswordFunction);
-router.post('register/reset-password', resetPasswordFunction);
+router.post('/register/verify-forgot-password-otp', verifyForgotPasswordOtpFunction);
+router.post('/register/reset-password', resetPasswordFunction);
 router.post('/register/refreshToken', refreshTokenFunction);
 router.get('/register/logout', logoutFunction)
 

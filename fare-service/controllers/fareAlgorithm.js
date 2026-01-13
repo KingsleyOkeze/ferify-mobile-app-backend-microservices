@@ -2,7 +2,7 @@
 // NIGERIAN TRANSPORT PRICE ESTIMATOR - BACKEND API
 // ============================================================================
 // This is a complete Node.js backend for estimating Okada/Keke/Bus prices
-// Built for MVP with detailed comments for beginners
+const internalApi = require("../configs/internalApi");
 // ============================================================================
 
 
@@ -59,16 +59,16 @@ const SURGE_THRESHOLD = 5;     // If 5+ people report high prices in 48hrs
 async function calculateDistance(fromLocation, toLocation) {
   // WHAT THIS DOES:
   // Takes two location names and returns distance in kilometers
-  
+
   // WHY WE NEED THIS:
   // When someone searches for a route we don't have data for yet,
   // we need to estimate the price based on how far it is
-  
+
   // FOR MVP: Replace this with actual Google Maps API call
   // Example: https://maps.googleapis.com/maps/api/distancematrix/json
-  
+
   console.log(`📍 Calculating distance from ${fromLocation} to ${toLocation}`);
-  
+
   // MOCK DISTANCES (in kilometers)
   // In real app, this would be a real API call
   const mockDistances = {
@@ -77,10 +77,10 @@ async function calculateDistance(fromLocation, toLocation) {
     'Lekki->VI': 8.3,
     'Surulere->Festac': 15.0
   };
-  
+
   const key = `${fromLocation}->${toLocation}`;
   const reverseKey = `${toLocation}->${fromLocation}`;
-  
+
   // Check if we have this route in our mock data
   if (mockDistances[key]) {
     return mockDistances[key];
@@ -101,12 +101,12 @@ async function calculateDistance(fromLocation, toLocation) {
 function roundToNearest50(price) {
   // WHAT THIS DOES:
   // Takes any price (e.g., 347) and rounds it to nearest 50 (350)
-  
+
   // WHY WE NEED THIS:
   // In Nigeria, drivers rarely charge ₦347 or ₦423
   // They charge ₦350, ₦400, ₦450, etc.
   // This makes our estimates realistic
-  
+
   // HOW IT WORKS:
   // 347 ÷ 50 = 6.94 → rounds to 7 → 7 × 50 = 350
   return Math.round(price / 50) * 50;
@@ -122,31 +122,31 @@ function calculatePercentile(sortedArray, percentile) {
   // WHAT THIS DOES:
   // Finds the value at a specific position in a sorted list
   // E.g., 50th percentile (median) = middle value
-  
+
   // WHY WE NEED THIS:
   // Instead of just averaging prices, we want to know:
   // - 25th percentile = cheap prices
   // - 50th percentile = typical prices
   // - 75th percentile = expensive prices
-  
+
   // EXAMPLE:
   // Prices: [300, 300, 350, 350, 400, 450, 500]
   // 25th percentile = 300 (cheap end)
   // 50th percentile = 350 (typical)
   // 75th percentile = 450 (expensive end)
-  
+
   if (sortedArray.length === 0) return 0;
-  
+
   const index = (percentile / 100) * (sortedArray.length - 1);
   const lower = Math.floor(index);
   const upper = Math.ceil(index);
   const weight = index - lower;
-  
+
   // If exact match, return that value
   if (lower === upper) {
     return sortedArray[lower];
   }
-  
+
   // Otherwise, interpolate between two values
   return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
 }
@@ -159,11 +159,11 @@ function calculatePercentile(sortedArray, percentile) {
 function getDaysAgo(dateString) {
   // WHAT THIS DOES:
   // Calculates how many days ago a price was submitted
-  
+
   // WHY WE NEED THIS:
   // We want recent prices to matter more than old prices
   // A price from yesterday is more accurate than a price from 20 days ago
-  
+
   const submittedDate = new Date(dateString);
   const today = new Date();
   const diffTime = today - submittedDate;
@@ -180,39 +180,39 @@ async function calculateDistanceBasedEstimate(fromLocation, toLocation, vehicleT
   // WHAT THIS DOES:
   // When we have NO user-submitted prices for a route,
   // we estimate the price based on distance
-  
+
   // WHY WE NEED THIS:
   // On Day 1 of your MVP, you have zero user data
   // But users still need some estimate to start with
-  
+
   // HOW IT WORKS:
   // 1. Get distance between locations (e.g., 5km)
   // 2. Multiply by vehicle rate (e.g., Keke = ₦100/km)
   // 3. Result: 5km × ₦100 = ₦500
-  
+
   console.log('\n🔄 Using DISTANCE-BASED estimate (no user data yet)');
-  
+
   // Step 1: Get the distance
   const distanceKm = await calculateDistance(fromLocation, toLocation);
   console.log(`   Distance: ${distanceKm} km`);
-  
+
   // Step 2: Get the rate for this vehicle type
   const rates = VEHICLE_RATES[vehicleType];
   if (!rates) {
     throw new Error(`Unknown vehicle type: ${vehicleType}`);
   }
-  
+
   // Step 3: Calculate estimated price
   const estimatedPrice = distanceKm * rates.ratePerKm;
   console.log(`   Raw estimate: ₦${estimatedPrice} (${distanceKm}km × ₦${rates.ratePerKm}/km)`);
-  
+
   // Step 4: Round to realistic price
   const typical = roundToNearest50(estimatedPrice);
   const min = roundToNearest50(estimatedPrice - 50);  // A bit cheaper
   const max = roundToNearest50(estimatedPrice + 50);  // A bit more expensive
-  
+
   console.log(`   Final estimate: ₦${min} - ₦${max} (Typical: ₦${typical})`);
-  
+
   return {
     minPrice: min,
     typicalPrice: typical,
@@ -233,48 +233,48 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
   // WHAT THIS DOES:
   // When we HAVE user-submitted prices, we use smart math
   // to calculate the most accurate price range
-  
+
   // WHY WE NEED THIS:
   // Different people report different prices (₦300, ₦350, ₦400)
   // We need to handle variations, outliers, and changing conditions
-  
+
   // THE MAGIC:
   // - Recent prices matter more than old prices
   // - Outliers are detected and handled intelligently
   // - Surge pricing is automatically detected
-  
+
   console.log('\n📊 Using STATISTICAL estimate (from user data)');
   console.log(`   Total submissions: ${submissions.length}`);
-  
+
   // -------------------------
   // STEP 1: Filter Recent Prices (Last 30 Days)
   // -------------------------
   // WHY: Prices from 2 months ago are not relevant today
-  
+
   const recentSubmissions = submissions.filter(sub => {
     const daysAgo = getDaysAgo(sub.timestamp);
     return daysAgo <= PRICE_EXPIRY_DAYS;
   });
-  
+
   console.log(`   Recent submissions (last ${PRICE_EXPIRY_DAYS} days): ${recentSubmissions.length}`);
-  
+
   if (recentSubmissions.length === 0) {
     console.log('   ⚠️ No recent data, falling back to distance-based');
     return null;  // Signal to use distance-based instead
   }
-  
-  
+
+
   // -------------------------
   // STEP 2: Apply Time-Based Weights
   // -------------------------
   // WHY: A price from yesterday is more accurate than a price from 20 days ago
   // HOW: We "duplicate" recent prices so they count more in our calculation
-  
+
   const weightedPrices = [];
-  
+
   recentSubmissions.forEach(sub => {
     const daysAgo = getDaysAgo(sub.timestamp);
-    
+
     // Determine weight based on age
     let weight;
     if (daysAgo <= 7) {
@@ -284,7 +284,7 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
     } else {
       weight = 0.4;   // 2-4 weeks ago: 40% weight
     }
-    
+
     // Add this price multiple times based on weight
     // E.g., weight 0.7 means add it 7 times (out of 10)
     const repeatCount = Math.round(weight * 10);
@@ -292,25 +292,25 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
       weightedPrices.push(sub.price);
     }
   });
-  
+
   console.log(`   Weighted prices array size: ${weightedPrices.length}`);
-  
-  
+
+
   // -------------------------
   // STEP 3: Sort Prices (Required for Percentile Calculations)
   // -------------------------
   weightedPrices.sort((a, b) => a - b);  // Ascending order: [300, 300, 350, 400, ...]
-  
-  
+
+
   // -------------------------
   // STEP 4: Detect Outliers Using IQR Method
   // -------------------------
   // THIS IS THE KEY TO HANDLING YOUR ₦1000 vs ₦350 PROBLEM!
-  
+
   // WHAT IS IQR (Interquartile Range)?
   // It's a statistical method to find values that are "too different"
   // from the majority of the data
-  
+
   // HOW IT WORKS:
   // Imagine prices: [300, 300, 350, 350, 400, 1000]
   // Q1 (25th percentile) = 300
@@ -319,22 +319,22 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
   // Lower bound = 300 - (1.5 × 100) = 150
   // Upper bound = 400 + (1.5 × 100) = 550
   // So ₦1000 is WAY outside 550, it's an outlier!
-  
+
   const Q1 = calculatePercentile(weightedPrices, 25);
   const Q3 = calculatePercentile(weightedPrices, 75);
   const IQR = Q3 - Q1;
-  
+
   const lowerBound = Q1 - (1.5 * IQR);
   const upperBound = Q3 + (1.5 * IQR);
-  
+
   console.log(`   Q1 (25th): ₦${Q1}, Q3 (75th): ₦${Q3}`);
   console.log(`   IQR: ₦${IQR}`);
   console.log(`   Outlier bounds: ₦${lowerBound.toFixed(0)} - ₦${upperBound.toFixed(0)}`);
-  
+
   // Separate normal prices from outliers
   const normalPrices = [];
   const outlierPrices = [];
-  
+
   weightedPrices.forEach(price => {
     if (price >= lowerBound && price <= upperBound) {
       normalPrices.push(price);
@@ -342,36 +342,36 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
       outlierPrices.push(price);
     }
   });
-  
+
   console.log(`   Normal prices: ${normalPrices.length}, Outliers: ${outlierPrices.length}`);
-  
-  
+
+
   // -------------------------
   // STEP 5: Detect Surge Pricing
   // -------------------------
   // CRITICAL QUESTION: Is the "outlier" actually an error, or is it real surge?
-  
+
   // SCENARIO A: One person reports ₦1000 when everyone else says ₦350
   // → Probably a mistake or someone trying to cheat
   // → We EXCLUDE this from our estimate
-  
+
   // SCENARIO B: Five people report ₦800-₦1000 in the last 2 days
   // → Probably real surge (fuel price increase, weather, etc.)
   // → We INCLUDE this in our estimate and warn users
-  
+
   const last48Hours = recentSubmissions.filter(sub => {
     return getDaysAgo(sub.timestamp) <= 2;
   });
-  
+
   const recentOutliers = last48Hours.filter(sub => {
     return sub.price > upperBound || sub.price < lowerBound;
   });
-  
+
   const surgeDetected = recentOutliers.length >= SURGE_THRESHOLD;
-  
+
   console.log(`   Recent outliers (48hrs): ${recentOutliers.length}`);
   console.log(`   Surge detected: ${surgeDetected ? 'YES ⚠️' : 'NO ✓'}`);
-  
+
   // Decide which prices to use for final calculation
   let finalPrices;
   if (surgeDetected) {
@@ -381,25 +381,25 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
     // Use only normal prices (exclude outliers as errors)
     finalPrices = normalPrices;
   }
-  
-  
+
+
   // -------------------------
   // STEP 6: Calculate Final Price Range
   // -------------------------
   finalPrices.sort((a, b) => a - b);
-  
+
   const minPrice = roundToNearest50(calculatePercentile(finalPrices, 25));
   const typicalPrice = roundToNearest50(calculatePercentile(finalPrices, 50));
   const maxPrice = roundToNearest50(calculatePercentile(finalPrices, 75));
-  
+
   console.log(`   Final range: ₦${minPrice} - ₦${maxPrice} (Typical: ₦${typicalPrice})`);
-  
-  
+
+
   // -------------------------
   // STEP 7: Calculate Confidence Level
   // -------------------------
   // MORE data points = MORE confidence in our estimate
-  
+
   const dataPoints = recentSubmissions.length;
   let confidence;
   if (dataPoints >= 20) {
@@ -409,18 +409,18 @@ function calculateStatisticalEstimate(submissions, vehicleType) {
   } else {
     confidence = 'LOW';      // Not much data yet
   }
-  
-  
+
+
   // -------------------------
   // STEP 8: Build User-Friendly Message
   // -------------------------
   let message = `Based on ${dataPoints} recent report${dataPoints > 1 ? 's' : ''}`;
-  
+
   if (surgeDetected) {
     message += ' ⚠️ Prices may be higher than usual right now';
   }
-  
-  
+
+
   // -------------------------
   // STEP 9: Return Complete Result
   // -------------------------
@@ -446,52 +446,52 @@ const getFareEstimateFunction = async (req, res) => {
   // WHAT THIS DOES:
   // User enters "From: Ishaga, To: Okearo, Vehicle: Keke"
   // We return "₦300 - ₦400 (Typical: ₦350)"
-  
+
   try {
     // Get parameters from the request
     const { from, to, vehicle } = req.query;
-    
+
     // Validate inputs
     if (!from || !to || !vehicle) {
       return res.status(400).json({
         error: 'Missing required parameters: from, to, vehicle'
       });
     }
-    
+
     if (!VEHICLE_RATES[vehicle]) {
       return res.status(400).json({
         error: `Invalid vehicle type. Must be one of: ${Object.keys(VEHICLE_RATES).join(', ')}`
       });
     }
-    
+
     console.log('\n' + '='.repeat(70));
     console.log(`📱 NEW PRICE ESTIMATE REQUEST`);
     console.log(`   From: ${from}`);
     console.log(`   To: ${to}`);
     console.log(`   Vehicle: ${vehicle}`);
     console.log('='.repeat(70));
-    
-    
+
+
     // -------------------------
     // STEP 1: Check Cache First (For Speed)
     // -------------------------
     // If we calculated this route 5 minutes ago, just return the cached result
-    
+
     const cacheKey = `${from}->${to}->${vehicle}`;
     const cached = routeCache[cacheKey];
-    
+
     if (cached && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
       // Cache is less than 5 minutes old, use it!
       console.log('✓ Returning CACHED result');
       return res.json(cached.data);
     }
-    
-    
+
+
     // -------------------------
     // STEP 2: Find Relevant Price Submissions
     // -------------------------
     // Look in our database for prices people have submitted for this route
-    
+
     const relevantSubmissions = priceSubmissions.filter(sub => {
       // Match both directions (Ishaga→Okearo OR Okearo→Ishaga)
       const matchesRoute = (
@@ -500,29 +500,29 @@ const getFareEstimateFunction = async (req, res) => {
       );
       return matchesRoute && sub.vehicle === vehicle;
     });
-    
+
     console.log(`💾 Found ${relevantSubmissions.length} price submission(s) in database`);
-    
-    
+
+
     // -------------------------
     // STEP 3: Calculate Estimate
     // -------------------------
     let estimate;
-    
+
     if (relevantSubmissions.length === 0) {
       // NO DATA: Use distance-based estimate
       estimate = await calculateDistanceBasedEstimate(from, to, vehicle);
     } else {
       // WE HAVE DATA: Use statistical estimate
       estimate = calculateStatisticalEstimate(relevantSubmissions, vehicle);
-      
+
       // If statistical method fails (e.g., all data too old), fall back to distance
       if (!estimate) {
         estimate = await calculateDistanceBasedEstimate(from, to, vehicle);
       }
     }
-    
-    
+
+
     // -------------------------
     // STEP 4: Cache the Result
     // -------------------------
@@ -530,14 +530,14 @@ const getFareEstimateFunction = async (req, res) => {
       data: estimate,
       timestamp: Date.now()
     };
-    
-    
+
+
     // -------------------------
     // STEP 5: Return to User
     // -------------------------
     console.log('✅ Estimate calculated successfully!\n');
     res.json(estimate);
-    
+
   } catch (error) {
     console.error('❌ Error:', error);
     res.status(500).json({
@@ -557,29 +557,29 @@ const submitFarePriceFunction = async (req, res) => {
   // WHAT THIS DOES:
   // User reports "I just paid ₦350 for Ishaga to Okearo on a Keke"
   // We save it to our database and recalculate the estimate
-  
+
   try {
     const { from, to, vehicle, price, userId } = req.body;
-    
+
     // Validate inputs
     if (!from || !to || !vehicle || !price) {
       return res.status(400).json({
         error: 'Missing required fields: from, to, vehicle, price'
       });
     }
-    
+
     if (!VEHICLE_RATES[vehicle]) {
       return res.status(400).json({
         error: `Invalid vehicle type. Must be one of: ${Object.keys(VEHICLE_RATES).join(', ')}`
       });
     }
-    
+
     if (typeof price !== 'number' || price <= 0) {
       return res.status(400).json({
         error: 'Price must be a positive number'
       });
     }
-    
+
     console.log('\n' + '='.repeat(70));
     console.log(`💰 NEW PRICE SUBMISSION`);
     console.log(`   From: ${from}`);
@@ -588,8 +588,8 @@ const submitFarePriceFunction = async (req, res) => {
     console.log(`   Price: ₦${price}`);
     console.log(`   User: ${userId || 'anonymous'}`);
     console.log('='.repeat(70));
-    
-    
+
+
     // -------------------------
     // STEP 1: Save to Database
     // -------------------------
@@ -602,11 +602,11 @@ const submitFarePriceFunction = async (req, res) => {
       userId: userId || 'anonymous',
       timestamp: new Date().toISOString()
     };
-    
+
     priceSubmissions.push(submission);
     console.log(`✓ Saved to database (Total submissions: ${priceSubmissions.length})`);
-    
-    
+
+
     // -------------------------
     // STEP 2: Invalidate Cache
     // -------------------------
@@ -614,18 +614,35 @@ const submitFarePriceFunction = async (req, res) => {
     const cacheKey = `${from}->${to}->${vehicle}`;
     delete routeCache[cacheKey];
     console.log(`✓ Cache cleared for this route`);
-    
-    
+
+
     // -------------------------
-    // STEP 3: Return Success
+    // STEP 3: Record Contribution (Internal API)
+    // -------------------------
+    if (userId) {
+      try {
+        internalApi.post(`${process.env.USER_SERVICE_URL}/user/contribution/internal/record`, {
+          userId,
+          type: 'fare_submission',
+          points: 15, // Fares give more points
+          details: { from, to, vehicle, price }
+        }).catch(err => console.error("Failed to record contribution (non-blocking):", err.message));
+      } catch (e) {
+        console.error("Contribution reporting failed:", e.message);
+      }
+    }
+
+    // -------------------------
+    // STEP 4: Return Success
     // -------------------------
     console.log('✅ Price submitted successfully!\n');
     res.json({
       success: true,
       message: 'Thank you! Your price report helps others.',
-      submission
+      submission,
+      pointsAwarded: userId ? 15 : 0
     });
-    
+
   } catch (error) {
     console.error('❌ Error:', error);
     res.status(500).json({
@@ -643,7 +660,7 @@ const submitFarePriceFunction = async (req, res) => {
 // app.get('/api/submissions', (req, res) => {
 //   // Returns all price submissions in the database
 //   // Useful for debugging and seeing what data you have
-  
+
 //   res.json({
 //     total: priceSubmissions.length,
 //     submissions: priceSubmissions
@@ -658,10 +675,10 @@ const submitFarePriceFunction = async (req, res) => {
 // app.post('/api/clear-data', (req, res) => {
 //   // Deletes all data - useful when testing
 //   // WARNING: Don't expose this in production!
-  
+
 //   priceSubmissions = [];
 //   routeCache = {};
-  
+
 //   res.json({
 //     success: true,
 //     message: 'All data cleared'
@@ -708,7 +725,38 @@ const submitFarePriceFunction = async (req, res) => {
 // 4. View all submissions:
 //    curl "http://localhost:3000/api/submissions"
 
-module.export = {
+const placeSearchFunction = async (req, res) => {
+  const { input } = req.query;
+
+  if (!input) {
+    return res.status(400).json({ error: "Input is required" });
+  }
+
+  // Mock suggestions for now
+  // In a real app, this would call Google Places API
+  const allSuggestions = [
+    { title: 'Ikeja City Mall', address: 'Obafemi Awolowo Way, Ikeja, Lagos', latitude: 6.6191, longitude: 3.3484 },
+    { title: 'Computer Village', address: 'Otigba Street, Ikeja, Lagos', latitude: 6.5933, longitude: 3.3367 },
+    { title: 'Murtala Muhammed Airport', address: 'Ikeja, Lagos', latitude: 6.5774, longitude: 3.3211 },
+    { title: 'Alausa Secretariat', address: 'Alausa, Ikeja, Lagos', latitude: 6.6175, longitude: 3.3575 },
+    { title: 'Allen Avenue', address: 'Allen, Ikeja, Lagos', latitude: 6.6022, longitude: 3.3514 },
+    { title: 'Yaba Left', address: 'Yaba, Lagos', latitude: 6.5178, longitude: 3.3855 },
+    { title: 'Lekki Phase 1', address: 'Lekki, Lagos', latitude: 6.4478, longitude: 3.4737 },
+    { title: 'Victoria Island', address: 'VI, Lagos', latitude: 6.4281, longitude: 3.4215 },
+    { title: 'Oshodi Bus Stop', address: 'Oshodi, Lagos', latitude: 6.5555, longitude: 3.3408 },
+    { title: 'Maryland Mall', address: 'Maryland, Lagos', latitude: 6.5670, longitude: 3.3707 },
+  ];
+
+  const filtered = allSuggestions.filter(s =>
+    s.title.toLowerCase().includes(input.toLowerCase()) ||
+    s.address.toLowerCase().includes(input.toLowerCase())
+  );
+
+  res.status(200).json({ suggestions: filtered });
+};
+
+module.exports = {
   getFareEstimateFunction,
-  submitFarePriceFunction
-}
+  submitFarePriceFunction,
+  placeSearchFunction
+};
