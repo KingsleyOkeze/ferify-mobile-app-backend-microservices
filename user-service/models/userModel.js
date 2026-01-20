@@ -4,11 +4,9 @@ const userSchema = new mongoose.Schema(
 	{
 		firstName: {
 			type: String,
-			required: true,
 		},
 		lastName: {
 			type: String,
-			required: true,
 		},
 		userName: {
 			type: String,
@@ -24,8 +22,22 @@ const userSchema = new mongoose.Schema(
 			type: String,
 			required: true,
 		},
-		location: {
+		profilePhoto: {
 			type: String,
+		},
+		location: { // The Technical Coordinates (Eg: Format: { type: "Point", coordinates: [longitude, latitude] })
+			type: {
+				type: String,
+				enum: ['Point'],
+				default: 'Point'
+			},
+			coordinates: {
+				type: [Number], // [longitude, latitude]
+				default: [0, 0]
+			}
+		},
+		lastKnownAddress: { // The Human Address (Eg: Format: "123 Fake Street, Ikeja, Lagos")
+			type: String, 
 		},
 		role: {
 			type: String,

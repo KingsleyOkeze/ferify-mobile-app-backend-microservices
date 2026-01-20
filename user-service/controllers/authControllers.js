@@ -13,109 +13,97 @@ const internalApi = require("../configs/internalApi");
 
 
 // Connect to redis
-const client = redis.createClient();
-client.connect({
-    url: 'redis://username:password@host:port' // Use your cloud provider URL
-})
+const client = redis.createClient({
+    url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
+client.on('error', (err) => console.error('Redis Client Error', err));
+client.connect()
     .then(() => console.log("Connected to Redis"))
     .catch(err => console.error("Redis connection error:", err));
 
 
 
 const signupStartFunction = async (req, res) => {
-    const { firstName, lastName, email } = req.body;
+    const { email, password } = req.body;
 
     try {
-        // Validate all required fields
-        if (!firstName || !lastName || !email) {
-            return res.status(400).json({ error: 'All fields are required!' });
-        }
-
-        // Validate firstName and lastName (non-empty after trim)
-        if (firstName.trim().length === 0) {
-            return res.status(400).json({ error: 'First name is required.' });
-        }
-        if (lastName.trim().length === 0) {
-            return res.status(400).json({ error: 'Last name is required.' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required!' });
         }
 
         // Validate email
         const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
         if (!isValidEmail(email)) {
-            console.log('Invalid email');
             return res.status(400).json({ error: 'Invalid email format!' });
         }
 
-        // Normalize email
-        const normalizedEmail = email.trim();
-
-        // Prevent reuse of already verified emails
-        const existing = await userModel.findOne({
-            email: normalizedEmail,
-            emailVerified: true
-        });
-        if (existing) {
-            return res.status(400).json({ error: "Email already in use" });
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters!' });
         }
 
+        const normalizedEmail = email.trim();
+
+        // Check availability
+        const existing = await userModel.findOne({ email: normalizedEmail });
+        if (existing && existing.isEmailVerified) {
+            return res.status(400).json({ error: "Email already in use." });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 12);
+
         // Generate OTP
-        const otp = generateSixDigitOTP();
+        const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
-        // Upsert pending user (update if exists, create if not)
+        // Upsert user
         await userModel.findOneAndUpdate(
             { email: normalizedEmail },
             {
-                firstName,
-                lastName,
-                role: 'User',
                 email: normalizedEmail,
-                emailVerified: false,
+                password: hashedPassword,
+                isEmailVerified: false,
             },
             { upsert: true, new: true }
         );
 
-        // Store otp for the user in Redis 
-        await redis.setex(`otp:${normalizedEmail}`, otpExpiresAt, otp);
+        // Store OTP in Redis
+        await client.setEx(`otp:${normalizedEmail}`, 600, otp);
 
-        // Send OTP email (with no await).
+        // Send OTP email
         try {
             internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email`,
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
                 {
                     params: {
-                        normalizedEmail, firstName, lastName, otp
+                        normalizedEmail,
+                        firstName: 'User', // Placeholder
+                        lastName: '',
+                        otp
                     },
-                    timeout: 50000 // 5 seconds 
+                    timeout: 50000
                 }
             );
-
         } catch (error) {
-            console.error('OTP email failed (non-blocking):', {
-                email: normalizedEmail,
-                error: error.message,
-                code: error.code,
-                response: error.response?.data
-            });
+            console.error('OTP email failed:', error.message);
         }
 
         return res.json({
             message: "OTP sent to email",
-            maskedEmail: maskEmail(normalizedEmail) // e.g., o**@gmail.com
+            maskedEmail: maskEmail(normalizedEmail)
         });
 
     } catch (error) {
+        console.error("Signup start error:", error);
         return res.status(500).json({ error: "Internal Server Error!" });
     }
 };
-
 
 const signupVerifyOtpFunction = async (req, res) => {
     const { email, code } = req.body;
     const normalizedEmail = email.trim();
 
-    // Check Redis first
-    const redisOtp = await redis.get(`otp:${normalizedEmail}`);
+    // Check Redis
+    const redisOtp = await client.get(`otp:${normalizedEmail}`);
     if (!redisOtp || redisOtp !== code) {
         return res.status(400).json({ error: "Invalid or expired code" });
     }
@@ -125,82 +113,41 @@ const signupVerifyOtpFunction = async (req, res) => {
         return res.status(404).json({ error: "User not found" });
     }
 
-    // Mark email as verified, clear OTP
-    user.emailVerified = true;
-    user.emailVerificationCode = null;
-    user.emailVerificationExpiresAt = null;
+    // Mark email as verified
+    user.isEmailVerified = true;
     await user.save();
 
-    // Delete from Redis
-    await redis.del(`otp:${normalizedEmail}`);
+    // Delete OTP
+    await client.del(`otp:${normalizedEmail}`);
 
-    // Return success → mobile app now shows password screen
-    return res.json({
-        message: "Email verified successfully",
-        nextStep: "set_password",
-        user: {
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email
-        }
-    });
-};
-
-
-const signupCompleteFunction = async (req, res) => {
-    const { email, confirmPassword } = req.body;
-    const normalizedEmail = email.trim();
-
-    if (!confirmPassword) {
-        return res.status(400).json({ error: "Invalid password" });
-    }
-
-    const user = await userModel.findOne({
-        email: normalizedEmail,
-        emailVerified: true
-    });
-
-    if (!user) {
-        return res.status(400).json({ error: "Invalid or incomplete registration" });
-    }
-
-    if (user.password) {
-        return res.status(400).json({ error: "Account already completed" });
-    }
-
-    // Now hash and save password
-    user.password = await bcrypt.hash(confirmPassword, 12);
-    await user.save();
-
-    // Generate tokens
+    // Generate tokens (LOGIN THE USER IMMEDIATELY)
     const accessToken = jwt.sign(
-        {
-            userId: user._id,
-            role: user.role,
-        },
-        process.env.JWT_SECRET,
+        { userId: user._id, role: user.role },
+        accessTokenSecret,
         { expiresIn: '15m' }
     );
     const refreshToken = jwt.sign(
-        {
-            userId: user._id,
-            role: user.role,
-        },
+        { userId: user._id, role: user.role },
         refreshTokenSecret,
         { expiresIn: '7d' }
     );
 
     return res.json({
-        message: "Account created successfully",
+        message: "Email verified & logged in",
         accessToken,
         refreshToken,
         user: {
             id: user._id,
+            email: user.email,
             firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email
+            lastName: user.lastName
         }
     });
+};
+
+// Deprecated or Removed
+const signupCompleteFunction = async (req, res) => {
+    return res.status(410).json({ error: "Endpoint deprecated. Password set during initiation." });
 };
 
 
@@ -224,25 +171,25 @@ const resendOtpFunction = async (req, res) => {
         // Prevent reuse of already verified emails
         const existing = await userModel.findOne({
             email: normalizedEmail,
-            emailVerified: true
+            isEmailVerified: true
         });
         if (existing) {
             return res.status(400).json({ error: "Email already in use" });
         }
 
         // Generate OTP
-        const otp = generateSixDigitOTP();
+        const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
         // Store otp for the user in Redis 
-        await redis.setex(`otp:${normalizedEmail}`, otpExpiresAt, otp);
+        await client.setEx(`otp:${normalizedEmail}`, 600, otp);
 
         // Send OTP email (with no await).
         try {
             const user = await userModel.findOne({ email: normalizedEmail });
 
             internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email`,
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
                 {
                     params: {
                         normalizedEmail,
@@ -279,118 +226,107 @@ const resendOtpFunction = async (req, res) => {
 
 
 
-const loginFunction = async (req, res) => {
-    const { email, password } = req.body;
+const loginInitiateFunction = async (req, res) => {
+    const { email } = req.body;
 
     try {
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email & password is required!' });
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required!' });
         }
 
-        // Validate email
-        const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        if (!isValidEmail(email)) {
-            console.log('Invalid email');
-            return res.status(400).json({ error: 'Invalid email format!' });
-        }
-
-        // Normalize email
         const normalizedEmail = email.trim();
 
+        // Check if user exists
         const user = await userModel.findOne({ email: normalizedEmail });
-
         if (!user) {
-            return res.status(404).json({ error: 'Account does not exist!' });
+            return res.status(404).json({ error: 'Account does not exist. Please sign up.' });
         }
 
-        const normalizedPassword = password.trim();
-        const isPasswordValid = bcrypt.compareSync(normalizedPassword, user.password);
+        // Generate OTP
+        const otp = generateOTP(4);
+        const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
-        if (!isPasswordValid) {
-            return res.status(401).json({ error: 'Invalid password' });
+        // Store OTP in Redis
+        await client.setEx(`otp:${normalizedEmail}`, 600, otp);
+
+        // Send OTP email
+        try {
+            internalApi.get(
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+                {
+                    params: {
+                        normalizedEmail,
+                        firstName: user.firstName || 'User',
+                        lastName: user.lastName || '',
+                        otp
+                    },
+                    timeout: 50000
+                }
+            );
+        } catch (error) {
+            console.error('Login OTP email failed:', error.message);
         }
 
-        if (user.isEmailVerified !== true) {
-            console.log('email not verified');
-            // Generate OTP
-            const otp = generateSixDigitOTP();
-            const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
+        return res.status(200).json({
+            message: "OTP sent to email",
+            maskedEmail: maskEmail(normalizedEmail)
+        });
 
-            // Store otp for the user in Redis 
-            await redis.setex(`otp:${normalizedEmail}`, otpExpiresAt, otp);
+    } catch (error) {
+        console.error("Login initiate error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
 
-            // Send OTP email
-            try {
-                internalApi.get(
-                    `${process.env.NOTIFICATION_SERVICE_URL}/notification/email`,
-                    {
-                        params: {
-                            normalizedEmail,
-                            firstName: user.firstName,
-                            lastName: user.lastName,
-                            otp
-                        },
-                        timeout: 50000 // 10 seconds 
-                    }
-                )
+const loginVerifyFunction = async (req, res) => {
+    const { email, code } = req.body;
+    const normalizedEmail = email.trim();
 
-            } catch (error) {
-                console.error('OTP email failed (non-blocking):', {
-                    email: normalizedEmail,
-                    error: error.message,
-                    code: error.code,
-                    response: error.response?.data
-                });
-            }
-
-            return res.status(403).json({
-                error: 'Email is not verified!',
-                redirectUrl: `${process.env.CUSTOMER_CLIENT_URL}/email-sent/${user._id}`,
-                userId: user._id,
-                role: user.role,
-                message: 'Verification code sent to your email'
-            });
-
+    try {
+        // Check Redis
+        const redisOtp = await client.get(`otp:${normalizedEmail}`);
+        if (!redisOtp || redisOtp !== code) {
+            return res.status(400).json({ error: "Invalid or expired code" });
         }
 
-        // Sign JWT tokens
+        const user = await userModel.findOne({ email: normalizedEmail });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Delete OTP
+        await client.del(`otp:${normalizedEmail}`);
+
+        // Generate tokens
         const accessToken = jwt.sign(
-            {
-                userId: user._id,
-                role: user.role,
-            },
+            { userId: user._id, role: user.role },
             accessTokenSecret,
             { expiresIn: '15m' }
         );
-
         const refreshToken = jwt.sign(
-            {
-                userId: user._id,
-                role: user.role,
-            },
+            { userId: user._id, role: user.role },
             refreshTokenSecret,
             { expiresIn: '7d' }
         );
 
-        console.log('successfully logged in.');
-
-        return res
-            .status(200)
-            .json({
-                accessToken,
-                refreshToken,
-                message: 'Customer logged in successfully',
-                user: {
-                    userId: user._id,
-                    role: user.role
-                },
-            });
+        return res.status(200).json({
+            message: "Logged in successfully",
+            accessToken,
+            refreshToken,
+            user: {
+                id: user._id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                username: user.userName,
+                profilePhoto: user.profilePhoto
+            }
+        });
 
     } catch (error) {
-        console.log("Error logging in", error);
-        return res.status(500).json({ error: 'Internal Server Error' });
+        console.error("Login verify error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
     }
-
 };
 
 
@@ -406,7 +342,7 @@ const forgotPasswordFunction = async (req, res) => {
         }
 
         // Generate OTP
-        const otp = generateSixDigitOTP();
+        const otp = generateOTP(6);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
         // Store otp for the user in Redis 
@@ -415,7 +351,7 @@ const forgotPasswordFunction = async (req, res) => {
         // Send OTP email
         try {
             internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email`,
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
                 {
                     params: {
                         normalizedEmail: email,
@@ -520,7 +456,7 @@ const refreshTokenFunction = async (req, res) => {
         }
 
         // Check if token is blacklisted in our cache db before issuing new token.
-        const blacklisted = await redis.get(`blacklist:${refreshToken}`);
+        const blacklisted = await client.get(`blacklist:${refreshToken}`);
         if (blacklisted) {
             return res.status(401).json({ error: 'Token has been revoked' });
         }
@@ -571,10 +507,7 @@ const logoutFunction = async (req, res) => {
                 const expiresIn = decoded.exp - now;
 
                 if (expiresIn > 0) {
-                    // key     = the token string (unique ID)
-                    // ttl     = how long it would have lived
-                    // value   = '1' → just a flag saying "dead"
-                    await redis.setex(`blacklist:${refreshToken}`, expiresIn, '1');
+                    await client.setEx(`blacklist:${refreshToken}`, expiresIn, '1');
                 }
             } catch (err) {
                 // Token expired or invalid → nothing to blacklist
@@ -595,8 +528,21 @@ const logoutFunction = async (req, res) => {
 
 
 
+const generateOTP = (length) => {
+    const min = Math.pow(10, length - 1);
+    const max = Math.pow(10, length) - 1;
+    return Math.floor(min + Math.random() * (max - min)).toString();
+};
+
+const maskEmail = (email) => {
+    const [user, domain] = email.split("@");
+    const maskedUser = user.length > 2 ? user.substring(0, 2) + "*".repeat(user.length - 2) : user + "*";
+    return `${maskedUser}@${domain}`;
+};
+
 module.exports = {
-    loginFunction,
+    loginInitiateFunction,
+    loginVerifyFunction,
     signupStartFunction,
     signupVerifyOtpFunction,
     signupCompleteFunction,

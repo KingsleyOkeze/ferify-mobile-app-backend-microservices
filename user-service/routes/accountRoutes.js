@@ -1,18 +1,22 @@
 const express = require("express");
 const {
-    initiateEmailUpdate,
     verifyEmailUpdate,
     updateUsername,
-    initiatePasswordReset,
-    verifyPasswordReset
+    verifyPasswordReset,
+    updateProfilePhoto,
+    updateProfilePhoto,
+    updateProfile,
+    updateUserLocation
 } = require("../controllers/accountControllers");
+const upload = require("../middlewares/uploadMiddleware");
 
 const router = express.Router();
 
-router.post('/update-email/initiate', initiateEmailUpdate);
 router.post('/update-email/verify', verifyEmailUpdate);
 router.put('/update-username', updateUsername);
-router.post('/reset-password/initiate', initiatePasswordReset);
 router.post('/reset-password/verify', verifyPasswordReset);
+router.put('/update-profile-photo', upload.single('profilePhoto'), updateProfilePhoto);
+router.put('/update-profile', updateProfile);
+router.patch('/location', updateUserLocation);
 
 module.exports = router;

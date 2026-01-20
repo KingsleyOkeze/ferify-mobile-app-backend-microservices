@@ -1,6 +1,7 @@
 const express = require("express");
 const {
-    loginFunction,
+    loginInitiateFunction,
+    loginVerifyFunction,
     signupStartFunction,
     signupVerifyOtpFunction,
     resendOtpFunction,
@@ -11,16 +12,19 @@ const {
     refreshTokenFunction,
     logoutFunction
 } = require("../controllers/authControllers");
+const { googleLoginFunction } = require("../controllers/googleAuthControllers");
 
 const router = express.Router();
 
-router.post('/register/start', signupStartFunction);
+router.post('/register/initiate', signupStartFunction);
 router.post('/register/verify-otp', signupVerifyOtpFunction);
 router.post('/register/complete', signupCompleteFunction);
-router.post('/login', loginFunction);
+router.post('/login/initiate', loginInitiateFunction);
+router.post('/login/verify', loginVerifyFunction);
+router.post('/google-login', googleLoginFunction);
 
 
-router.post('/register/resend-otp', resendOtpFunction);
+router.get('/register/resend-otp/:email', resendOtpFunction);
 router.post('/register/forgot-password', forgotPasswordFunction);
 router.post('/register/verify-forgot-password-otp', verifyForgotPasswordOtpFunction);
 router.post('/register/reset-password', resetPasswordFunction);
