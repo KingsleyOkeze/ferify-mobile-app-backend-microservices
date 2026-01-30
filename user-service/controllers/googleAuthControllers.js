@@ -19,8 +19,17 @@ const googleLoginFunction = async (req, res) => {
         return res.status(400).json({ error: "Google ID Token is required" });
     }
 
+    console.log("Audience expecting:", [
+        process.env.GOOGLE_CLIENT_ID_ANDROID,
+        process.env.GOOGLE_CLIENT_ID_IOS,
+        process.env.GOOGLE_CLIENT_ID_WEB
+    ]);
+
+    console.log("Incoming token:", typeof idToken, idToken?.slice(0, 20));
+
+
     try {
-        // 1. Verify the ID Token
+        // Verify the ID Token
         const ticket = await client.verifyIdToken({
             idToken: idToken,
             audience: [
@@ -38,7 +47,7 @@ const googleLoginFunction = async (req, res) => {
             return res.status(400).json({ error: "Google email is not verified" });
         }
 
-        // 2. Check if user exists
+        // Check if user exists
         let user = await userModel.findOne({ email });
 
         if (user) {
@@ -64,7 +73,7 @@ const googleLoginFunction = async (req, res) => {
             });
         }
 
-        // 3. Generate Tokens
+        // Generate Tokens
         const accessToken = jwt.sign(
             {
                 userId: user._id,

@@ -4,9 +4,14 @@ const app = express();
 const emailRoutes = require("./routes/emailRoutes");
 const internalSecretKeyCheckMiddleware = require("./middlewares/internalSecretKeyCheck");
 
-const PORT = process.env.PORT || 5004;
-app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+    console.log(`Incoming Request: ${req.method} ${req.url}`);
+    next();
+});
 
+const PORT = process.env.PORT || 5004;
+
+app.use(express.json({ limit: '1mb' }));
 app.use(internalSecretKeyCheckMiddleware);
 
 app.use('/notification/email', emailRoutes);

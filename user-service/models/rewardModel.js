@@ -25,7 +25,20 @@ const rewardSchema = new mongoose.Schema({
         type: String,
         enum: ['Bronze', 'Silver', 'Gold', 'Platinum'],
         default: 'Bronze'
+    },
+    level: {
+        type: Number,
+        default: 1
+    },
+    earnedBadges: {
+        type: [String], // Array of badge IDs like ['starter', 'helper']
+        default: []
+    },
+    helpedCount: { // Number of people helped (total contributions)
+        type: Number,
+        default: 0
     }
+
 }, { timestamps: true });
 
 const rewardModel = mongoose.model("rewards", rewardSchema);

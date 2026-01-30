@@ -3,6 +3,7 @@ const otpEmailTemplate = require("../templates/otpEmailTemplate");
 
 const sendOtpEmailFunction = async (req, res) => {
     const { normalizedEmail, firstName, lastName, otp } = req.query;
+    console.log('SEND EMAIL CALLED')
     try {
         const { subject, html } = otpEmailTemplate(firstName, lastName, otp);
         await emailingFunction(
@@ -10,6 +11,7 @@ const sendOtpEmailFunction = async (req, res) => {
             subject,
             html
         );
+        console.log('Email service successfully sent to user')
         return res.status(200).json({ message: "OTP email sent successfully" });
 
     } catch (error) {

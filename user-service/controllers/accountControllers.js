@@ -1,4 +1,6 @@
-const UserModel = require("../models/userModel");
+const userModel = require("../models/userModel");
+const rewardModel = require("../models/rewardModel");
+const contributionModel = require("../models/contributionModel");
 const otpModel = require("../models/otpModel");
 const internalApi = require("../configs/internalApi");
 const cloudinary = require('cloudinary').v2;
@@ -12,6 +14,31 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+const getProfile = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+
+    try {
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        return res.status(200).json({
+            firstName: user.firstName,
+            lastName: user.lastName,
+            username: user.userName,
+            email: user.email,
+            phone: user.phoneNumber,
+            profilePhoto: user.profilePhoto,
+            avatarColor: user.avatarColor,
+            location: user.lastKnownAddress
+        });
+    } catch (error) {
+        console.error("Get profile error:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
 const updateProfilePhoto = async (req, res) => {
     const userId = req.headers['x-user-id'];
 
@@ -20,7 +47,7 @@ const updateProfilePhoto = async (req, res) => {
     }
 
     try {
-        const user = await UserModel.findById(userId);
+        const user = await userModel.findById(userId);
         if (!user) {
             // Clean up uploaded file if user not found
             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -55,6 +82,87 @@ const updateProfilePhoto = async (req, res) => {
     }
 };
 
+const updateUserEmail = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    const { newEmail } = req.body;
+
+    if (!newEmail) {
+        return res.status(400).json({ error: "New email is required" });
+    }
+
+    try {
+        console.log(`[USER-SERVICE] Dedicated settings email update for userId: ${userId} to newEmail: ${newEmail}`);
+
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Check if email already in use
+        const existing = await userModel.findOne({ email: newEmail.toLowerCase() });
+        if (existing) {
+            if (existing._id.toString() === userId) {
+                return res.status(400).json({ error: "This is already your current email." });
+            }
+            return res.status(400).json({ error: "Email already in use by another account." });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+
+        // Save OTP
+        await otpModel.findOneAndUpdate(
+            { userId, purpose: 'email_update' },
+            { email: newEmail, otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
+            { upsert: true, new: true }
+        );
+
+        // Send OTP via notification service
+        internalApi.get(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`, {
+            params: {
+                normalizedEmail: newEmail,
+                firstName: user.firstName || 'User',
+                lastName: user.lastName || '',
+                otp
+            }
+        }).catch(err => console.error("Email update OTP notification failed:", err.message));
+
+        res.status(200).json({ message: "Verification code sent to your new email." });
+    } catch (error) {
+        console.error("Error initiating settings email update:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const updateFullName = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    const { firstName, lastName } = req.body;
+
+    if (!firstName || !lastName) {
+        return res.status(400).json({ error: "First name and last name are required" });
+    }
+
+    try {
+        const user = await userModel.findByIdAndUpdate(
+            userId,
+            { firstName, lastName },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        return res.status(200).json({
+            message: "Name updated successfully",
+            firstName: user.firstName,
+            lastName: user.lastName
+        });
+    } catch (error) {
+        console.error("Update full name error:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
 const verifyEmailUpdate = async (req, res) => {
     const userId = req.headers['x-user-id'];
     const { otp } = req.body;
@@ -71,7 +179,7 @@ const verifyEmailUpdate = async (req, res) => {
         }
 
         // Update user email
-        await UserModel.findByIdAndUpdate(userId, { email: otpRecord.email });
+        await userModel.findByIdAndUpdate(userId, { email: otpRecord.email });
 
         // Delete OTP
         await otpModel.deleteOne({ _id: otpRecord._id });
@@ -80,6 +188,30 @@ const verifyEmailUpdate = async (req, res) => {
     } catch (error) {
         console.error("Error verifying email update:", error);
         res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const updatePhoneNumber = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number is required" });
+    }
+
+    try {
+        const user = await userModel.findByIdAndUpdate(userId, { phoneNumber }, { new: true });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        return res.status(200).json({
+            message: "Phone number updated successfully",
+            phoneNumber: user.phoneNumber
+        });
+    } catch (error) {
+        console.error("Update phone number error:", error);
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -92,12 +224,12 @@ const updateUsername = async (req, res) => {
     }
 
     try {
-        const existingUser = await UserModel.findOne({ username: newUsername });
+        const existingUser = await userModel.findOne({ username: newUsername });
         if (existingUser) {
             return res.status(400).json({ error: "Username already in use" });
         }
 
-        const user = await UserModel.findByIdAndUpdate(userId, { userName: newUsername }, { new: true });
+        const user = await userModel.findByIdAndUpdate(userId, { userName: newUsername }, { new: true });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -124,7 +256,7 @@ const verifyPasswordReset = async (req, res) => {
             return res.status(400).json({ error: "Invalid or expired OTP" });
         }
 
-        const user = await UserModel.findById(userId);
+        const user = await userModel.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -143,7 +275,7 @@ const verifyPasswordReset = async (req, res) => {
 
 const updateProfile = async (req, res) => {
     const userId = req.headers['x-user-id'];
-    const { firstName, lastName, username, phoneNumber, location, bio } = req.body;
+    const { firstName, lastName, username, phoneNumber, location, bio, avatarColor, profilePhoto } = req.body;
 
     try {
         const updateData = {};
@@ -153,16 +285,18 @@ const updateProfile = async (req, res) => {
         if (phoneNumber) updateData.phoneNumber = phoneNumber;
         if (location) updateData.location = location;
         if (bio) updateData.bio = bio;
+        if (avatarColor) updateData.avatarColor = avatarColor;
+        if (profilePhoto === null) updateData.profilePhoto = null;
 
         // Check availability if username is changing
         if (username) {
-            const existing = await UserModel.findOne({ userName: username, _id: { $ne: userId } });
+            const existing = await userModel.findOne({ userName: username, _id: { $ne: userId } });
             if (existing) {
                 return res.status(400).json({ error: "Username already in use" });
             }
         }
 
-        const user = await UserModel.findByIdAndUpdate(userId, updateData, { new: true });
+        const user = await userModel.findByIdAndUpdate(userId, updateData, { new: true });
 
         if (!user) {
             return res.status(404).json({ error: "User not found" });
@@ -176,7 +310,8 @@ const updateProfile = async (req, res) => {
                 username: user.userName,
                 email: user.email,
                 phoneNumber: user.phoneNumber,
-                profilePhoto: user.profilePhoto
+                profilePhoto: user.profilePhoto,
+                avatarColor: user.avatarColor
             }
         });
 
@@ -195,7 +330,7 @@ const updateUserLocation = async (req, res) => {
     }
 
     try {
-        const user = await UserModel.findById(userId);
+        const user = await userModel.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -217,13 +352,49 @@ const updateUserLocation = async (req, res) => {
     }
 };
 
+const deleteAccount = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+
+    if (!userId) {
+        return res.status(400).json({ error: "Can't identify user." });
+    }
+
+    try {
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Delete user
+        await userModel.findByIdAndDelete(userId);
+
+        // Delete user rewards/achievements
+        await rewardModel.findOneAndDelete({ userId });
+
+        // Delete user contribution history
+        await contributionModel.deleteMany({ userId });
+
+        // Note: In a production environment, you might want to trigger background jobs
+        // to clean up data in other services (fares, routes, notifications, etc.)
+        // via a message queue or internal API calls.
+
+        return res.status(200).json({ message: "Account deleted successfully" });
+    } catch (error) {
+        console.error("Delete account error:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
 module.exports = {
-    // initiateEmailUpdate,
+    updateUserEmail,
+    updateFullName,
     verifyEmailUpdate,
     updateUsername,
-    // initiatePasswordReset,
     verifyPasswordReset,
     updateProfilePhoto,
     updateProfile,
-    updateUserLocation
+    getProfile,
+    updatePhoneNumber,
+    updateUserLocation,
+    deleteAccount
 };

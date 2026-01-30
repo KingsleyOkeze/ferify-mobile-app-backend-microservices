@@ -7,7 +7,7 @@ client.connect()
     .then(() => console.log("✅ Connected to Redis"))
     .catch(err => console.error("Redis connection error:", err));
 
-const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY; 
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const googleAutocompleteUrl = "https://maps.googleapis.com/maps/api/place/autocomplete/json";
 
@@ -26,27 +26,26 @@ const placeSearchFunction = async (req, res) => {
         const cachedSuggestions = await client.get(query);
         if (cachedSuggestions) {
             console.log("♻️ Serving from cache:", query);
-            console.log("♻️ Serving from cache result:", cachedSuggestions);
-            return res.status(200).json({result: JSON.parse(cachedSuggestions)});
+            return res.status(200).json(JSON.parse(cachedSuggestions));
         }
 
         // --- GOOGLE API CALL ---
-        
+
         // 3. FETCH FROM GOOGLE PLACES AUTOCOMPLETE
         const response = await googleMapsApi.get(googleAutocompleteUrl, {
             params: {
                 // The user's text input
-                input: query, 
+                input: query,
                 // Your Places API Key
                 key: GOOGLE_PLACES_API_KEY,
                 // Optional: Restrict results to Nigeria for relevance
-                components: 'country:ng', 
+                components: 'country:ng',
                 // Optional: Focus on addresses and geographic places
-                types: 'geocode', 
+                types: 'geocode',
             },
             timeout: 2500, // Prevent hanging on slow Google response
         });
-        
+
         // 4. HANDLE API STATUS AND ERRORS
         if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
             // Throw an error if the API call itself failed for reasons other than no results.
@@ -55,13 +54,13 @@ const placeSearchFunction = async (req, res) => {
 
         // 5. MAP AND CLEAN THE RESULTS
         // Extract the array of predictions.
-        const predictions = response.data.predictions || []; 
+        const predictions = response.data.predictions || [];
 
         const result = predictions.map((prediction) => ({
             // The full suggested address/name
-            name: prediction.description, 
+            name: prediction.description,
             // The unique identifier needed for a follow-up Geocoding or Directions API call
-            place_id: prediction.place_id, 
+            place_id: prediction.place_id,
             // Lat/Lon is not directly available in Autocomplete and must be fetched separately.
         }));
 
@@ -80,7 +79,7 @@ const placeSearchFunction = async (req, res) => {
 };
 
 const getDistanceOfThisTwoLocationInKm = async (req, res) => {
-    const {startPlaceId, endPlaceId} = req.query;
+    const { startPlaceId, endPlaceId } = req.query;
     // Check if inputs are valid Place IDs (or addresses)
     if (!startPlaceId || !endPlaceId) {
         throw new Error("Missing start or end location ID.");
@@ -110,7 +109,7 @@ const getDistanceOfThisTwoLocationInKm = async (req, res) => {
                 params: {
                     origin: originString,
                     destination: destinationString,
-                    mode: 'driving', 
+                    mode: 'driving',
                     // key: GOOGLE_API_KEY,
                 }
             }
@@ -194,25 +193,57 @@ const routeBreakdownFunction = async (req, res) => {
 
         // 9. MAP AND CLEAN/FORMAT THE DATA
         // Iterate over the raw steps array to create a simplified, custom JSON structure for the frontend.
-        const cleanRoute = steps.map(step => ({
-            // The main direction/landmark instruction (e.g., "Take the bus to Agege").
-            instruction: step.html_instructions, 
-            distance: step.distance.text,
-            duration: step.duration.text,
-            travelMode: step.travel_mode,
-            // Include public transit specific details (line name, stop name) if the step is a transit step.
-            transit: step.transit_details ? {
-                line: step.transit_details.line.name,
-                departureStop: step.transit_details.departure_stop.name
-            } : null
+        const cleanRoute = await Promise.all(steps.map(async (step) => {
+            const travelMode = step.travel_mode.toLowerCase();
+            let fareEstimate = null;
+
+            // Map Google travel modes to our vehicle types
+            const vehicleMap = {
+                'bus': 'bus',
+                'transit': 'bus', // Assuming transit in Nigeria often means bus/keke
+                'bicycling': 'bike'
+            };
+
+            const vehicleType = vehicleMap[travelMode];
+
+            if (vehicleType) {
+                try {
+                    const fareResponse = await internalApi.get(`${process.env.FARE_SERVICE_URL}/estimate`, {
+                        params: {
+                            from: step.start_location.lat + "," + step.start_location.lng, // Simplified: using coordinates or landmark name if available
+                            to: step.end_location.lat + "," + step.end_location.lng,
+                            vehicle: vehicleType
+                        }
+                    });
+                    fareEstimate = fareResponse.data;
+                } catch (e) {
+                    // Silently fail if no fare data, just show standard route
+                    console.log(`No fare data for leg: ${step.html_instructions}`);
+                }
+            }
+
+            return {
+                // The main direction/landmark instruction (e.g., "Take the bus to Agege").
+                instruction: step.html_instructions,
+                distance: step.distance.text,
+                duration: step.duration.text,
+                travelMode: step.travel_mode,
+                fareEstimate,
+                // Include public transit specific details (line name, stop name) if the step is a transit step.
+                transit: step.transit_details ? {
+                    line: step.transit_details.line.name,
+                    departureStop: step.transit_details.departure_stop.name
+                } : null
+            };
         }));
+
 
         // --- CACHING STORAGE ---
 
         // 10. CACHE THE RESULT
         // Define cache expiration time (Time-To-Live, TTL) for efficient caching (e.g., 30 days).
         const expiresIn = 30 * 60; // 30 minutes for traffic/transit sensitive data
-        
+
         // Store the result using both the forward and reverse keys to enable cache hits in both directions.
         await client.setEx(key, expiresIn, JSON.stringify(cleanRoute));
         await client.setEx(reverseKey, expiresIn, JSON.stringify(cleanRoute));

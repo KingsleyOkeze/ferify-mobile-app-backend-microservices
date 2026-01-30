@@ -25,6 +25,9 @@ const userSchema = new mongoose.Schema(
 		profilePhoto: {
 			type: String,
 		},
+		avatarColor: {
+			type: String,
+		},
 		location: { // The Technical Coordinates (Eg: Format: { type: "Point", coordinates: [longitude, latitude] })
 			type: {
 				type: String,
@@ -37,7 +40,7 @@ const userSchema = new mongoose.Schema(
 			}
 		},
 		lastKnownAddress: { // The Human Address (Eg: Format: "123 Fake Street, Ikeja, Lagos")
-			type: String, 
+			type: String,
 		},
 		role: {
 			type: String,

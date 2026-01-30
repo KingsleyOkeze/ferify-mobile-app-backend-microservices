@@ -7,6 +7,8 @@ const {
     jwt_secret,
     accessTokenSecret,
     refreshTokenSecret,
+    generateOTP,
+    maskEmail
 } = require("../configs/configs");
 const redis = require("redis");
 const internalApi = require("../configs/internalApi");
@@ -37,8 +39,8 @@ const signupStartFunction = async (req, res) => {
             return res.status(400).json({ error: 'Invalid email format!' });
         }
 
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters!' });
+        if (password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters!' });
         }
 
         const normalizedEmail = email.trim();
@@ -80,7 +82,7 @@ const signupStartFunction = async (req, res) => {
                         lastName: '',
                         otp
                     },
-                    timeout: 50000
+                    // timeout: 50000 // Let not set timeout for notification service
                 }
             );
         } catch (error) {
@@ -197,9 +199,13 @@ const resendOtpFunction = async (req, res) => {
                         lastName: user?.lastName || '',
                         otp
                     },
-                    timeout: 50000 // 5 seconds 
+                    timeout: 30000 // Disable timeout for notification
                 }
-            );
+            ).catch(err => {
+                // 2. This catches the ECONNRESET so the server DOES NOT CRASH
+                console.error("NOTIFICATION SYSTEM ERROR (Background):", err.message);
+                // You can even log this to a file or a monitoring service here
+            });
 
         } catch (error) {
             console.error('OTP email failed (non-blocking):', {
@@ -242,10 +248,17 @@ const loginInitiateFunction = async (req, res) => {
             return res.status(404).json({ error: 'Account does not exist. Please sign up.' });
         }
 
+        if (user.isEmailVerified === false) {
+            return res.status(403).json({ 
+                error: 'User Email is not verified.',
+                email: user.email
+            });
+        }
+
         // Generate OTP
         const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
-
+       
         // Store OTP in Redis
         await client.setEx(`otp:${normalizedEmail}`, 600, otp);
 
@@ -502,7 +515,7 @@ const logoutFunction = async (req, res) => {
 
         if (refreshToken) {
             try {
-                const decoded = jwt.verify(refreshToken, REFRESH_SECRET);
+                const decoded = jwt.verify(refreshToken, refreshTokenSecret);
                 const now = Math.floor(Date.now() / 1000);
                 const expiresIn = decoded.exp - now;
 
@@ -511,10 +524,10 @@ const logoutFunction = async (req, res) => {
                 }
             } catch (err) {
                 // Token expired or invalid → nothing to blacklist
+                console.log("Logout: Token invalid or already expired during blacklisting");
             }
         }
 
-        console.log("User logged out successfully, cleared cookies:", refreshTokenCookies);
         return res.status(200).json({
             message: "Logged out successfully",
         });
@@ -528,17 +541,7 @@ const logoutFunction = async (req, res) => {
 
 
 
-const generateOTP = (length) => {
-    const min = Math.pow(10, length - 1);
-    const max = Math.pow(10, length) - 1;
-    return Math.floor(min + Math.random() * (max - min)).toString();
-};
 
-const maskEmail = (email) => {
-    const [user, domain] = email.split("@");
-    const maskedUser = user.length > 2 ? user.substring(0, 2) + "*".repeat(user.length - 2) : user + "*";
-    return `${maskedUser}@${domain}`;
-};
 
 module.exports = {
     loginInitiateFunction,

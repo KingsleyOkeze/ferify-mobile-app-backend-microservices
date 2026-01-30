@@ -3,7 +3,7 @@ const axiosRetry = require('axios-retry').default;
 const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET_KEY;
 
 const internalApi = axios.create({
-    timeout: 60000,
+    timeout: 50000,
     headers: {
         'Content-Type': 'application/json',
     },
