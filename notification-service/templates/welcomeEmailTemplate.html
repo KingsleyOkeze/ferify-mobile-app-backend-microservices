@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Ferify</title>
+
+    <!-- Import Inter Font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background-color: #f9f9f9;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+
+        .header {
+            background-color: #0a0a0a;
+            padding: 40px 40px 0 40px;
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .logo svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
+            margin-right: 10px;
+        }
+
+        .logo span {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            padding-top: 6px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 15px 0;
+            line-height: 1.2;
+        }
+
+        .header p {
+            color: #e0e0e0;
+            font-size: 15px;
+            line-height: 1.5;
+            margin: 0 0 20px 0;
+            font-weight: 400;
+        }
+
+        .image-container {
+            text-align: right;
+            margin-right: -20px;
+            margin-top: 30px;
+            height: 140px;
+        }
+
+        .image-container img {
+            width: 180px;
+            height: auto;
+            display: inline-block;
+        }
+
+        .content {
+            padding-top: 40px;
+            padding-bottom: 40px;
+            padding-right: 5px;
+            padding-left: 5px;
+            color: #333333;
+            border: 1px solid #eaeaea;
+            border-top: none;
+        }
+
+        .intro-text {
+            font-size: 16px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-bottom: 20px;
+        }
+
+        li {
+            font-size: 15px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+            color: #333333;
+        }
+
+        .btn-container {
+            margin: 15px 25px;
+        }
+
+        .btn {
+            background-color: #0a0a0a;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 15px;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            background-color: #222222;
+        }
+
+        .footer-text {
+            font-size: 11px;
+            color: #555555;
+            line-height: 1.6;
+            text-align: center;
+            margin-top: 40px;
+            border-top: 1px solid #f0f0f0;
+            padding-top: 25px;
+        }
+
+        .footer-text a {
+            color: #333333;
+            text-decoration: underline;
+            font-weight: 600;
+        }
+
+        .highlight-box {
+            border-top: 1px solid #eeeeee;
+            padding: 24px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .highlight-box .intro-text {
+            margin-top: 0;
+        }
+
+        .highlight-box ul {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="email-container">
+
+        <div class="header">
+            <div class="logo">
+                <img src="../public/WHITE-LOGO.png" width="44.02467346191406px" height="52px"
+                    style="padding-right: 10px;" />
+                <span>Ferify</span>
+            </div>
+
+            <h1>Welcome to Ferify</h1>
+
+            <p>We are glad you're here, {{firstName}}.</p>
+
+            <p>
+                Ferify helps you know public transport fares before you leave home, and shows you how to get there step
+                by step, especially when the route is unfamiliar.
+            </p>
+
+            <div class="image-container">
+                <!-- Replace src with your specific yellow bus image https://cdn-icons-png.flaticon.com/512/3063/3063822.png-->
+                <img src="../public/busImage.png" alt="Yellow Bus Illustration" width="182.26229858398438px"
+                    height="148px">
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="highlight-box">
+                <p class="intro-text">With Ferify, you can:</p>
+
+                <ul>
+                    <li>Check estimated fares for bus, keke, and okada routes</li>
+                    <li>See route breakdowns with stops and directions</li>
+                    <li>Share what you paid and help others move smarter</li>
+                </ul>
+            </div>
+
+            <div class="btn-container">
+                <a href="ferifymobileapp://" class="btn">Start using Ferify</a>
+            </div>
+
+            <div class="footer-text">
+                <p>
+                    You're part of a growing community of commuters helping each other move with confidence.
+                    <br>
+                    If you ever have feedback or questions, just reply to this email, we're listening.
+                </p>
+                <p>
+                    You're receiving this email because you signed up for <a href="#">Ferify</a>
+                </p>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

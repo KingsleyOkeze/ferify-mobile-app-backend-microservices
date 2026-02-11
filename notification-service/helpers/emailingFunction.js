@@ -2,13 +2,13 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 let mailTransporter = nodemailer.createTransport({
-	service: 'gmail',
-	auth: {
-		user: process.env.ADMIN_EMAIL,
-		pass: process.env.ADMIN_GMAIL_PASSCODE
-	},
+    service: 'gmail',
+    auth: {
+        user: process.env.ADMIN_EMAIL,
+        pass: process.env.ADMIN_GMAIL_PASSCODE
+    },
     tls: {
-      rejectUnauthorized: false
+        rejectUnauthorized: false
     }
 });
 
@@ -18,7 +18,7 @@ const emailingFunction = async (sendTo, emailSubject, emailHtml) => {
             from: `"Ferify mobile app" <${process.env.ADMIN_EMAIL}>`,
             to: sendTo,
             subject: emailSubject,
-            text: emailHtml
+            html: emailHtml
         };
 
         const info = await mailTransporter.sendMail(mailDetails);

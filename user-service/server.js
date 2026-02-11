@@ -7,8 +7,10 @@ const accountRoutes = require("./routes/accountRoutes");
 const routeRoutes = require("./routes/routeRoutes");
 const contributionRoutes = require("./routes/contributionRoutes");
 const privacyRoutes = require("./routes/privacyRoutes");
+const notificationSettingsRoutes = require("./routes/notificationSettingsRoutes");
 const internalSecretKeyCheckMiddleware = require("./middlewares/internalSecretKeyCheck");
 const { connectDb } = require("./configs/configs");
+const { initializeJobs } = require("./jobs/scheduler");
 
 const PORT = process.env.PORT || 5001;
 app.use((req, res, next) => {
@@ -25,6 +27,9 @@ app.use(accountRoutes);
 app.use(routeRoutes);
 app.use(contributionRoutes);
 app.use(privacyRoutes);
+app.use(notificationSettingsRoutes);
 
+// Initialize scheduled jobs
+initializeJobs();
 
 

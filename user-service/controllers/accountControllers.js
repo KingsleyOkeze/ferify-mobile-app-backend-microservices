@@ -122,7 +122,8 @@ const updateUserEmail = async (req, res) => {
                 normalizedEmail: newEmail,
                 firstName: user.firstName || 'User',
                 lastName: user.lastName || '',
-                otp
+                otp,
+                type: 'signup'
             }
         }).catch(err => console.error("Email update OTP notification failed:", err.message));
 
@@ -241,6 +242,41 @@ const updateUsername = async (req, res) => {
     }
 };
 
+const initiatePasswordReset = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+
+    try {
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4 digits
+
+        // Save OTP
+        await otpModel.findOneAndUpdate(
+            { userId, purpose: 'password_reset' },
+            { email: user.email, otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
+            { upsert: true, new: true }
+        );
+
+        // Send OTP via notification service
+        internalApi.get(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`, {
+            params: {
+                normalizedEmail: user.email,
+                firstName: user.firstName || 'User',
+                lastName: user.lastName || '',
+                otp
+            }
+        }).catch(err => console.error("Password reset OTP notification failed:", err.message));
+
+        res.status(200).json({ message: "Verification code sent to your email." });
+    } catch (error) {
+        console.error("Error initiating password reset:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
 const verifyPasswordReset = async (req, res) => {
     const userId = req.headers['x-user-id'];
     const { otp, newPassword } = req.body;
@@ -335,6 +371,10 @@ const updateUserLocation = async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
+        if (!user.privacy.shareLocationData) {
+            return res.status(200).json({ message: "Location update skipped due to privacy settings" });
+        }
+
         user.location = {
             type: 'Point',
             coordinates: [longitude, latitude] // MongoDB uses [lng, lat]
@@ -349,6 +389,103 @@ const updateUserLocation = async (req, res) => {
     } catch (error) {
         console.error("Update location error:", error);
         return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const updatePushToken = async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    const { pushToken } = req.body;
+
+    if (!pushToken) {
+        return res.status(400).json({ error: "Push token is required" });
+    }
+
+    try {
+        const user = await userModel.findByIdAndUpdate(userId, { pushToken }, { new: true });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        return res.status(200).json({ message: "Push token updated successfully" });
+    } catch (error) {
+        console.error("Update push token error:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const getNearbyPushTokens = async (req, res) => {
+    try {
+        const { lng, lat, radius = 5000 } = req.query;
+
+        if (!lng || !lat) {
+            return res.status(400).json({ error: "Coordinates are required" });
+        }
+
+        const nearbyUsers = await userModel.find({
+            location: {
+                $near: {
+                    $geometry: {
+                        type: "Point",
+                        coordinates: [parseFloat(lng), parseFloat(lat)]
+                    },
+                    $maxDistance: parseInt(radius)
+                }
+            },
+            pushToken: { $ne: null, $exists: true },
+            'privacy.shareLocationData': true
+        }).select('pushToken');
+
+        const tokens = [...new Set(nearbyUsers.map(u => u.pushToken).filter(Boolean))];
+        res.status(200).json({ tokens });
+    } catch (error) {
+        console.error("Get nearby push tokens error:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+const getRouteContributorsTokens = async (req, res) => {
+    try {
+        const { userIds } = req.body;
+        if (!userIds || !Array.isArray(userIds)) {
+            return res.status(400).json({ error: "User IDs array required" });
+        }
+
+        const users = await userModel.find({
+            _id: { $in: userIds },
+            pushToken: { $ne: null },
+            'notificationSettings.communityActivity': true
+        }).select('pushToken');
+
+        const tokens = users.map(u => u.pushToken);
+        res.status(200).json({ tokens });
+    } catch (error) {
+        console.error("Internal route contributors tokens error:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+/**
+ * Fetch push token and notification settings for internal use
+ */
+const getUserPushData = async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).json({ error: "User ID is required" });
+        }
+
+        const user = await userModel.findById(userId).select('pushToken notificationSettings');
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        res.status(200).json({
+            pushToken: user.pushToken,
+            notificationSettings: user.notificationSettings
+        });
+    } catch (error) {
+        console.error("Internal get user push data error:", error);
+        res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -396,5 +533,10 @@ module.exports = {
     getProfile,
     updatePhoneNumber,
     updateUserLocation,
-    deleteAccount
+    deleteAccount,
+    initiatePasswordReset,
+    updatePushToken,
+    getNearbyPushTokens,
+    getRouteContributorsTokens,
+    getUserPushData
 };

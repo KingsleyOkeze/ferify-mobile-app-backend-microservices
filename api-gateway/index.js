@@ -64,10 +64,26 @@ app.use("/api/user/privacy", userAuth, createProxyMiddleware({
     changeOrigin: true,
 }));
 
+
+// Routes - User Service (Notification settings)
+app.use("/api/user/notification-settings", userAuth, createProxyMiddleware({
+    target: process.env.USER_SERVICE_URL,
+    pathRewrite: { '^/api/user/notification-settings': '' },
+    changeOrigin: true,
+}));
+
 // Routes - Fare Service (Private)
 app.use("/api/fare", userAuth, createProxyMiddleware({
     target: process.env.FARE_SERVICE_URL,
     pathRewrite: { '^/api/fare': '' },
+    changeOrigin: true,
+    ws: true // Enable WebSocket proxy
+}));
+
+// Routes - Notification Service (Private History & Socket)
+app.use("/api/notification", userAuth, createProxyMiddleware({
+    target: process.env.NOTIFICATION_SERVICE_URL,
+    pathRewrite: { '^/api/notification': '' },
     changeOrigin: true,
     ws: true // Enable WebSocket proxy
 }));

@@ -20,7 +20,7 @@ const googleLoginFunction = async (req, res) => {
     }
 
     console.log("Audience expecting:", [
-        process.env.GOOGLE_CLIENT_ID_ANDROID,
+        process.env.GOOGLE_CLIENT_ID_ANDROID, // Note: use android debug id for dev and android release id for prod.
         process.env.GOOGLE_CLIENT_ID_IOS,
         process.env.GOOGLE_CLIENT_ID_WEB
     ]);

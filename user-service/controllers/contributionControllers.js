@@ -83,6 +83,21 @@ const recordContribution = async (req, res) => {
             { upsert: true, new: true }
         );
 
+        // Notify user about points earned
+        try {
+            const internalApi = require("../configs/internalApi");
+            const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:5004';
+            await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+                userId,
+                type: 'points_earned',
+                title: 'Points Earned! ⭐',
+                description: `You just earned ${points || 10} points for your ${type.replace('_', ' ')}.`,
+                data: { points, type }
+            });
+        } catch (err) {
+            console.error("Failed to send points notification:", err.message);
+        }
+
         return res.status(200).json({ message: "Contribution recorded successfully" });
     } catch (error) {
         console.error("Record contribution error:", error);

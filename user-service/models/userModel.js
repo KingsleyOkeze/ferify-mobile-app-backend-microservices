@@ -71,6 +71,11 @@ const userSchema = new mongoose.Schema(
 			type: Date, // To track when the OTP will expire
 			default: null,
 		},
+		googleId: {
+			type: String,
+			unique: true,
+			sparse: true
+		},
 		privacy: {
 			profileVisibility: {
 				type: String,
@@ -86,10 +91,27 @@ const userSchema = new mongoose.Schema(
 				type: Boolean,
 				default: true
 			}
+		},
+		pushToken: {
+			type: String,
+			default: null
+		},
+		notificationSettings: {
+			communityActivity: {
+				type: Boolean,
+				default: false
+			},
+			tipsAndInsight: {
+				type: Boolean,
+				default: true
+			}
 		}
 	},
 	{ timestamps: true }
 );
+
+// Add geospatial index for nearby queries
+userSchema.index({ location: '2dsphere' });
 
 const userModel = mongoose.model('users', userSchema);
 

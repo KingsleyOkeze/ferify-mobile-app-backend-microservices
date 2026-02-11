@@ -1,0 +1,112 @@
+const Notification = require('../models/notificationModel');
+const { dispatchPushNotification } = require('./pushControllers');
+const internalApi = require('../configs/internalApi');
+
+/**
+ * Get notification history for a user
+ */
+const getNotifications = async (req, res) => {
+    try {
+        const userId = req.headers['x-user-id'];
+        if (!userId) return res.status(401).json({ error: "User ID not found in headers" });
+        const notifications = await Notification.find({ userId })
+            .sort({ createdAt: -1 })
+            .limit(50);
+
+        res.status(200).json({ notifications });
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+};
+
+/**
+ * Mark all notifications as read for a user
+ */
+const markAsRead = async (req, res) => {
+    try {
+        const userId = req.headers['x-user-id'];
+        if (!userId) return res.status(401).json({ error: "User ID not found in headers" });
+        await Notification.updateMany(
+            { userId, isRead: false },
+            { $set: { isRead: true } }
+        );
+        res.status(200).json({ message: 'Notifications marked as read' });
+    } catch (error) {
+        console.error('Error marking notifications as read:', error);
+        res.status(500).json({ error: 'Failed to update notifications' });
+    }
+};
+
+/**
+ * Handle internal request to create a notification (from other services)
+ */
+const createInternalNotification = async (req, res) => {
+    try {
+        const { userId, type, title, description, data } = req.body;
+
+        const notification = new Notification({
+            userId,
+            type,
+            title,
+            description,
+            data
+        });
+
+        await notification.save();
+
+        // 1. Emit via socket for foreground users
+        if (req.io) {
+            req.io.to(userId).emit('new_notification', notification);
+        }
+
+        // 2. Dispatch Background Push Notification
+        // Only if user is NOT actively using the app (handled by mobile app but we send anyway as a fallback)
+        // And if the user has enabled notifications for this category
+        (async () => {
+            try {
+                const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
+                const pushDataResponse = await internalApi.get(`${userServiceUrl}/api/user/account/internal/push-data?userId=${userId}`);
+                const { pushToken, notificationSettings } = pushDataResponse.data;
+
+                if (pushToken && notificationSettings) {
+                    let shouldSend = false;
+
+                    // Map notification type to user settings
+                    if (['fare_verified', 'fare_confirmed'].includes(type) && notificationSettings.communityActivity) {
+                        shouldSend = true;
+                    } else if (type === 'points_earned' && notificationSettings.communityActivity) {
+                        shouldSend = true;
+                    } else if (type === 'feature_update' && notificationSettings.tipsAndInsight) {
+                        shouldSend = true;
+                    } else if (type === 'general') {
+                        shouldSend = true;
+                    }
+
+                    if (shouldSend) {
+                        await dispatchPushNotification(
+                            [pushToken],
+                            title,
+                            description,
+                            { ...data, screen: '/notification/NotificationScreen' }
+                        );
+                    }
+                }
+            } catch (pushErr) {
+                console.error('Background push dispatch failed:', pushErr.message);
+            }
+        })();
+
+        res.status(201).json({ notification });
+    } catch (error) {
+        console.error('Error creating internal notification:', error);
+        res.status(500).json({ error: 'Failed to create notification' });
+    }
+};
+
+
+module.exports = {
+    getNotifications,
+    markAsRead,
+    createInternalNotification
+}

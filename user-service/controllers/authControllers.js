@@ -80,7 +80,8 @@ const signupStartFunction = async (req, res) => {
                         normalizedEmail,
                         firstName: 'User', // Placeholder
                         lastName: '',
-                        otp
+                        otp,
+                        type: 'signup'
                     },
                     // timeout: 50000 // Let not set timeout for notification service
                 }
@@ -133,6 +134,24 @@ const signupVerifyOtpFunction = async (req, res) => {
         refreshTokenSecret,
         { expiresIn: '7d' }
     );
+
+    // Trigger Account Ready (Welcome/Setup) Email asynchronously
+    try {
+        internalApi.get(
+            `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            {
+                params: {
+                    normalizedEmail,
+                    firstName: user.firstName || 'User',
+                    lastName: user.lastName || '',
+                    type: 'setup'
+                },
+                timeout: 30000
+            }
+        ).catch(err => console.error("Setup email failed:", err.message));
+    } catch (error) {
+        console.error("Setup email trigger error:", error);
+    }
 
     return res.json({
         message: "Email verified & logged in",
@@ -197,7 +216,8 @@ const resendOtpFunction = async (req, res) => {
                         normalizedEmail,
                         firstName: user?.firstName || 'User',
                         lastName: user?.lastName || '',
-                        otp
+                        otp,
+                        type: 'signup'
                     },
                     timeout: 30000 // Disable timeout for notification
                 }
@@ -249,7 +269,7 @@ const loginInitiateFunction = async (req, res) => {
         }
 
         if (user.isEmailVerified === false) {
-            return res.status(403).json({ 
+            return res.status(403).json({
                 error: 'User Email is not verified.',
                 email: user.email
             });
@@ -258,7 +278,7 @@ const loginInitiateFunction = async (req, res) => {
         // Generate OTP
         const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
-       
+
         // Store OTP in Redis
         await client.setEx(`otp:${normalizedEmail}`, 600, otp);
 
@@ -271,7 +291,8 @@ const loginInitiateFunction = async (req, res) => {
                         normalizedEmail,
                         firstName: user.firstName || 'User',
                         lastName: user.lastName || '',
-                        otp
+                        otp,
+                        type: 'login'
                     },
                     timeout: 50000
                 }
@@ -370,7 +391,8 @@ const forgotPasswordFunction = async (req, res) => {
                         normalizedEmail: email,
                         firstName: user.firstName,
                         lastName: user.lastName,
-                        otp
+                        otp,
+                        type: 'reset'
                     },
                     timeout: 50000 // 50 seconds 
                 }

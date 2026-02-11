@@ -1,5 +1,6 @@
 const contributionModel = require("../models/contributionModel");
 const estimateModel = require("../models/estimateModel");
+const internalApi = require("../configs/internalApi");
 
 /**
  * Calculates Interquartile Range (IQR) to identify and filter outliers.
@@ -60,6 +61,102 @@ const submitFarePriceFunction = async (req, res) => {
             });
         }
 
+        // Trigger Push Notification for Nearby Users
+        if (location && location.coordinates) {
+            const [lng, lat] = location.coordinates;
+
+            // Fetch nearby push tokens and broadcast (Async/Don't block response)
+            (async () => {
+                try {
+                    const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
+                    const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:5004';
+
+                    // Alert Nearby Users about the new fare
+                    const tokenResponse = await internalApi.get(`${userServiceUrl}/internal/nearby-push-tokens`, {
+                        params: { lng, lat, radius: 10000 } // 10km radius
+                    });
+
+                    const nearbyTokens = tokenResponse.data.tokens;
+
+                    if (nearbyTokens && nearbyTokens.length > 0) {
+                        const fromName = fromLocation.raw.split(',')[0];
+                        const toName = toLocation.raw.split(',')[0];
+
+                        await internalApi.post(`${notifServiceUrl}/notification/push/send`, {
+                            tokens: nearbyTokens,
+                            title: "New Fare Nearby! 🚗",
+                            body: `Someone just shared a fare from ${fromName} to ${toName}. Check it out!`,
+                            data: { screen: "HomeScreen" }
+                        });
+                    }
+
+                    // Alert Previous Contributors (Community Milestone)
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+                    const recentContributions = await contributionModel.find({
+                        "origin.raw": fromLocation.raw,
+                        "destination.raw": toLocation.raw,
+                        vehicleType,
+                        timestamp: { $gte: sevenDaysAgo },
+                        userId: { $ne: userId } // Don't notify the current user
+                    }).select('userId');
+
+                    const contributorIds = [...new Set(recentContributions.map(c => c.userId))];
+
+                    if (contributorIds.length > 0) {
+                        const contributorTokenResponse = await internalApi.post(`${userServiceUrl}/api/user/account/internal/route-contributors-tokens`, {
+                            userIds: contributorIds
+                        });
+
+                        const contributorTokens = contributorTokenResponse.data.tokens;
+
+                        if (contributorTokens && contributorTokens.length > 0) {
+                            const fromName = fromLocation.raw.split(',')[0];
+                            const toName = toLocation.raw.split(',')[0];
+
+                            await internalApi.post(`${notifServiceUrl}/notification/push/send`, {
+                                tokens: contributorTokens,
+                                title: "Community Impact! 🌟",
+                                body: `Your shared fare for ${fromName} → ${toName} was just confirmed by another user. Way to help the community!`,
+                                data: { screen: "MyContributionOverviewScreen" }
+                            });
+
+                            // Create internal notification records for contributors
+                            for (const contributorId of contributorIds) {
+                                await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+                                    userId: contributorId,
+                                    type: 'fare_confirmed',
+                                    title: "Community Impact! 🌟",
+                                    description: `Your shared fare for ${fromName} → ${toName} was just confirmed by another user.`,
+                                    data: { screen: "MyContributionOverviewScreen" }
+                                });
+                            }
+                        }
+                    }
+
+                } catch (pushError) {
+                    console.error("Delayed push notification trigger failed:", pushError.message);
+                }
+            })();
+        }
+
+        // Also notify the person who just shared that their fare is live (Fare Verified)
+        (async () => {
+            try {
+                const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:5004';
+                await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+                    userId: userId,
+                    type: 'fare_verified',
+                    title: "Fare Verified ✅",
+                    description: `Your contribution from ${fromLocation.raw.split(',')[0]} to ${toLocation.raw.split(',')[0]} is now live.`,
+                    data: { contributionId: newContribution._id }
+                });
+            } catch (err) {
+                console.error("Self notified verify failed:", err.message);
+            }
+        })();
+
         res.status(201).json({ message: "Contribution received. Thank you!", newContribution });
 
     } catch (error) {
@@ -88,19 +185,20 @@ const getNearbyFaresFunction = async (req, res) => {
             };
         }
 
+        // Limit results to the last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        query.timestamp = { $gte: sevenDaysAgo };
+
         let nearbyFares = await contributionModel.find(query)
             .sort({ timestamp: -1 })
             .limit(3);
 
-        let isLocal = !!(lng && lat && nearbyFares.length > 0);
+        let isLocal = true;
 
-        // If no nearby fares found, fallback to global latest (if we used proximity)
-        if (nearbyFares.length === 0 && lng && lat) {
-            console.log("No nearby fares found, falling back to global latest");
-            nearbyFares = await contributionModel.find({ isFlagged: false })
-                .sort({ timestamp: -1 })
-                .limit(3);
-            isLocal = false;
+        // If no nearby fares found, we just return empty list (handled by frontend empty state)
+        if (nearbyFares.length === 0) {
+            isLocal = true; // Technically still "local" context, just empty
         }
 
 
@@ -130,7 +228,9 @@ const getNearbyFaresFunction = async (req, res) => {
 // Helper for relative time
 const formatTimeAgo = (date) => {
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    let interval = seconds / 3600;
+    let interval = seconds / (3600 * 24);
+    if (interval > 1) return Math.floor(interval) + "d ago";
+    interval = seconds / 3600;
     if (interval > 1) return Math.floor(interval) + "h ago";
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + "m ago";
@@ -151,7 +251,7 @@ const getFareEstimateFunction = async (req, res) => {
             return res.status(400).json({ error: "From, To, and Vehicle type are required" });
         }
 
-        // 1. Check if we have a fresh estimate in cache
+        // Check if we have a fresh estimate in cache
         const cachedEstimate = await estimateModel.findOne({
             origin: from,
             destination: to,
@@ -163,7 +263,7 @@ const getFareEstimateFunction = async (req, res) => {
             return res.status(200).json(cachedEstimate);
         }
 
-        // 2. No fresh cache? Calculate from recent contributions
+        // No fresh cache? Calculate from recent contributions
         // Look back 7 days by default
         const lookbackDate = new Date();
         lookbackDate.setDate(lookbackDate.getDate() - 7);
@@ -180,7 +280,7 @@ const getFareEstimateFunction = async (req, res) => {
             return res.status(404).json({ message: "No recent fare data for this route. Be the first to contribute!" });
         }
 
-        // 3. Algorithm: IQR Filter -> Weighted Mean
+        // Algorithm: IQR Filter -> Weighted Mean
         const amounts = contributions.map(c => c.fareAmount);
         const filteredAmounts = filterOutliersIQR(amounts);
 
@@ -214,7 +314,7 @@ const getFareEstimateFunction = async (req, res) => {
             isVolatile: (max - min) / avg > 0.5 // If range is > 50% of avg, it's volatile
         };
 
-        // 4. Update Cache
+        // Update Cache
         await estimateModel.findOneAndUpdate(
             { origin: from, destination: to, vehicleType: vehicle },
             estimateData,
@@ -228,7 +328,6 @@ const getFareEstimateFunction = async (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 };
-
 
 const getPopularRoutesFunction = async (req, res) => {
     try {
@@ -268,24 +367,62 @@ const getPopularRoutesFunction = async (req, res) => {
 
 const getCommunityInsightsFunction = async (req, res) => {
     try {
-        // Return some contextual insights
-        // In a real app, this would check standard deviation and volume spikes
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Total contributions today
+        const contributionsToday = await contributionModel.countDocuments({
+            timestamp: { $gte: today },
+            isFlagged: false
+        });
+
+        // Active contributors today (distinct users)
+        const activeContributors = await contributionModel.distinct('userId', {
+            timestamp: { $gte: today },
+            isFlagged: false
+        });
+
+        // Find the most active route today
+        const topRoute = await contributionModel.aggregate([
+            { $match: { timestamp: { $gte: today }, isFlagged: false } },
+            {
+                $group: {
+                    _id: { from: "$origin.raw", to: "$destination.raw" },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { count: -1 } },
+            { $limit: 1 }
+        ]);
+
+        const routeName = topRoute.length > 0
+            ? `${topRoute[0]._id.from.split(',')[0]} → ${topRoute[0]._id.to.split(',')[0]}`
+            : "Live Community";
+
         const insights = [
             {
                 id: '1',
-                title: 'High Reliability',
-                body: 'Fare prices are stable today. Most routes are matching estimates.',
+                title: 'Community Activity 📊',
+                body: `${contributionsToday} fares shared today by ${activeContributors.length} helpers like you!`,
                 image: 'shine'
             },
             {
                 id: '2',
-                title: 'Contributor Bonus',
-                body: 'Double points for any route contributions in Ikeja today!',
+                title: 'Hot Route Right Now 🔥',
+                body: `${routeName} is seeing high activity. Check for current fare updates!`,
+                image: 'shine'
+            },
+            {
+                id: '3',
+                title: 'Contributor Bonus 🌟',
+                body: 'Help your community by verifying a nearby route to earn extra trust points.',
                 image: 'shine'
             }
         ];
+
         res.status(200).json(insights);
     } catch (error) {
+        console.error("Community insights error:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 };

@@ -9,7 +9,6 @@ const submitFeedback = async (req, res) => {
         const userId = req.headers['x-user-id'];
         const { subject, message } = req.body;
 
-        // Validation
         if (!subject || !message) {
             return res.status(400).json({ error: "Subject and message are required" });
         }
