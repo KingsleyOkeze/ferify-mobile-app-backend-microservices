@@ -9,7 +9,7 @@ const getNotifications = async (req, res) => {
     try {
         const userId = req.headers['x-user-id'];
         if (!userId) return res.status(401).json({ error: "User ID not found in headers" });
-        const notifications = await Notification.find({ userId })
+        const notifications = await notificationModel.find({ userId })
             .sort({ createdAt: -1 })
             .limit(50);
 
@@ -27,7 +27,7 @@ const markAsRead = async (req, res) => {
     try {
         const userId = req.headers['x-user-id'];
         if (!userId) return res.status(401).json({ error: "User ID not found in headers" });
-        await Notification.updateMany(
+        await notificationModel.updateMany(
             { userId, isRead: false },
             { $set: { isRead: true } }
         );
@@ -45,7 +45,7 @@ const createInternalNotification = async (req, res) => {
     try {
         const { userId, type, title, description, data } = req.body;
 
-        const notification = new Notification({
+        const notification = new notificationModel({
             userId,
             type,
             title,

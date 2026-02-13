@@ -73,15 +73,14 @@ const signupStartFunction = async (req, res) => {
 
         // Send OTP email
         try {
-            internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            internalApi.post(
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/verify-signup`,
                 {
                     params: {
                         normalizedEmail,
                         firstName: 'User', // Placeholder
                         lastName: '',
-                        otp,
-                        type: 'signup'
+                        otp
                     },
                     // timeout: 50000 // Let not set timeout for notification service
                 }
@@ -138,13 +137,12 @@ const signupVerifyOtpFunction = async (req, res) => {
     // Trigger Account Ready (Welcome/Setup) Email asynchronously
     try {
         internalApi.get(
-            `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/welcome`,
             {
                 params: {
                     normalizedEmail,
                     firstName: user.firstName || 'User',
-                    lastName: user.lastName || '',
-                    type: 'setup'
+                    lastName: user.lastName || ''
                 },
                 timeout: 30000
             }
@@ -209,15 +207,14 @@ const resendOtpFunction = async (req, res) => {
         try {
             const user = await userModel.findOne({ email: normalizedEmail });
 
-            internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            internalApi.post(
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/resend-otp`,
                 {
                     params: {
                         normalizedEmail,
                         firstName: user?.firstName || 'User',
                         lastName: user?.lastName || '',
-                        otp,
-                        type: 'signup'
+                        otp
                     },
                     timeout: 30000 // Disable timeout for notification
                 }
@@ -278,21 +275,20 @@ const loginInitiateFunction = async (req, res) => {
         // Generate OTP
         const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
-
+        console.log('otp ', otp)
         // Store OTP in Redis
         await client.setEx(`otp:${normalizedEmail}`, 600, otp);
 
         // Send OTP email
         try {
-            internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            internalApi.post(
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/verify-login`,
                 {
                     params: {
                         normalizedEmail,
                         firstName: user.firstName || 'User',
                         lastName: user.lastName || '',
-                        otp,
-                        type: 'login'
+                        otp
                     },
                     timeout: 50000
                 }
@@ -318,7 +314,7 @@ const loginVerifyFunction = async (req, res) => {
 
     try {
         // Check Redis
-        const redisOtp = await client.get(`otp:${normalizedEmail}`);
+        const redisOtp = await client.post(`otp:${normalizedEmail}`);
         if (!redisOtp || redisOtp !== code) {
             return res.status(400).json({ error: "Invalid or expired code" });
         }
@@ -384,15 +380,14 @@ const forgotPasswordFunction = async (req, res) => {
 
         // Send OTP email
         try {
-            internalApi.get(
-                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`,
+            internalApi.post(
+                `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/forgot-password`,
                 {
                     params: {
                         normalizedEmail: email,
                         firstName: user.firstName,
                         lastName: user.lastName,
                         otp,
-                        type: 'reset'
                     },
                     timeout: 50000 // 50 seconds 
                 }
@@ -420,7 +415,7 @@ const verifyForgotPasswordOtpFunction = async (req, res) => {
 
     try {
         const otpKey = `otp:${email}`;
-        const redisOtp = await client.get(otpKey);
+        const redisOtp = await client.post(otpKey);
 
         if (!redisOtp || redisOtp !== otp) {
             return res.status(400).json({ error: 'Invalid or expired OTP' });
@@ -491,7 +486,7 @@ const refreshTokenFunction = async (req, res) => {
         }
 
         // Check if token is blacklisted in our cache db before issuing new token.
-        const blacklisted = await client.get(`blacklist:${refreshToken}`);
+        const blacklisted = await client.post(`blacklist:${refreshToken}`);
         if (blacklisted) {
             return res.status(401).json({ error: 'Token has been revoked' });
         }

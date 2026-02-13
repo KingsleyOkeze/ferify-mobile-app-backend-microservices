@@ -8,7 +8,7 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['fare_verified', 'fare_confirmed', 'points_earned', 'feature_update', 'general'],
+        enum: ['fare_verified', 'fare_confirmed', 'points_earned', 'feature_update', 'general', 'earned_badge'],
         default: 'general'
     },
     title: {
@@ -26,13 +26,9 @@ const notificationSchema = new mongoose.Schema({
     data: {
         type: Object, // Optional extra data (e.g. fareId, pointsAmount)
         default: {}
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
     }
-});
+}, { timestamps: true });
 
-const Notification = mongoose.model('Notification', notificationSchema);
+const notificationModel = mongoose.model('notifications', notificationSchema);
 
-module.exports = Notification;
+module.exports = notificationModel;

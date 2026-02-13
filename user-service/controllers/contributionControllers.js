@@ -1,6 +1,7 @@
 const contributionModel = require("../models/contributionModel");
 const rewardModel = require("../models/rewardModel");
 const userModel = require("../models/userModel");
+const internalApi = require("../configs/internalApi");
 
 const getContributionOverview = async (req, res) => {
     const userId = req.headers['x-user-id'];
@@ -85,9 +86,7 @@ const recordContribution = async (req, res) => {
 
         // Notify user about points earned
         try {
-            const internalApi = require("../configs/internalApi");
-            const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:5004';
-            await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+            await internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/api/notification/internal/create`, {
                 userId,
                 type: 'points_earned',
                 title: 'Points Earned! ⭐',

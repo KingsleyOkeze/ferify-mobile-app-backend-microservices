@@ -117,13 +117,12 @@ const updateUserEmail = async (req, res) => {
         );
 
         // Send OTP via notification service
-        internalApi.get(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`, {
+        internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/verify-signup`, {
             params: {
                 normalizedEmail: newEmail,
                 firstName: user.firstName || 'User',
                 lastName: user.lastName || '',
-                otp,
-                type: 'signup'
+                otp
             }
         }).catch(err => console.error("Email update OTP notification failed:", err.message));
 
@@ -261,7 +260,7 @@ const initiatePasswordReset = async (req, res) => {
         );
 
         // Send OTP via notification service
-        internalApi.get(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/send-otp-email`, {
+        internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/forgot-password`, {
             params: {
                 normalizedEmail: user.email,
                 firstName: user.firstName || 'User',
