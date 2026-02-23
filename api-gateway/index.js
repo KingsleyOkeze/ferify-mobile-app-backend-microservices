@@ -36,7 +36,7 @@ app.use(internalSecretHeader);
 // Routes - User Service (Public Auth)
 app.use("/api/user/auth", createProxyMiddleware({
     target: process.env.USER_SERVICE_URL,
-    pathRewrite: { '^/api': '' }, // Removes "/api/user" from the beginning of the path
+    pathRewrite: { '^/api/user/auth': '' }, // Removes "/api/user/auth" from the beginning
     changeOrigin: true,
 }));
 

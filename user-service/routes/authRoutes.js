@@ -7,7 +7,7 @@ const {
     resendOtpFunction,
     signupCompleteFunction,
     forgotPasswordFunction,
-    // verifyForgotPasswordOtpFunction,
+    verifyForgotPasswordOtpFunction,
     resetPasswordFunction,
     refreshTokenFunction,
     logoutFunction
@@ -26,7 +26,7 @@ router.post('/google-login', googleLoginFunction);
 
 router.get('/register/resend-otp/:email', resendOtpFunction);
 router.post('/forgot-password', forgotPasswordFunction);
-// router.post('/verify-forgot-password-otp', verifyForgotPasswordOtpFunction);
+router.post('/verify-forgot-password-otp', verifyForgotPasswordOtpFunction);
 router.post('/reset-password', resetPasswordFunction);
 router.post('/refresh-token', refreshTokenFunction);
 router.post('/logout', logoutFunction)

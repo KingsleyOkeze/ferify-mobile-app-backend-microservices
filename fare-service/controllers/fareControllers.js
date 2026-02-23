@@ -27,7 +27,8 @@ const submitFarePriceFunction = async (req, res) => {
             timeOfDay,
             conditions,
             notes,
-            location // New: { coordinates: [lng, lat] }
+            location, // New: { coordinates: [lng, lat] }
+            contributionType // New: 'fare_submission' or 'route_confirmation'
         } = req.body;
 
         if (!userId || !fromLocation || !toLocation || !vehicleType || !fareAmount || !timeOfDay) {
@@ -105,7 +106,7 @@ const submitFarePriceFunction = async (req, res) => {
                     const contributorIds = [...new Set(recentContributions.map(c => c.userId))];
 
                     if (contributorIds.length > 0) {
-                        const contributorTokenResponse = await internalApi.post(`${userServiceUrl}/api/user/account/internal/route-contributors-tokens`, {
+                        const contributorTokenResponse = await internalApi.post(`${userServiceUrl}/internal/route-contributors-tokens`, {
                             userIds: contributorIds
                         });
 
@@ -148,9 +149,9 @@ const submitFarePriceFunction = async (req, res) => {
                 const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
 
                 // Record Contribution in user-service (Points & Badges)
-                await internalApi.post(`${userServiceUrl}/api/user/contribution/record`, {
+                await internalApi.post(`${userServiceUrl}/internal/record`, {
                     userId,
-                    type: 'fare_submission',
+                    type: contributionType || 'fare_submission',
                     points: 50,
                     details: {
                         contributionId: newContribution._id,

@@ -550,6 +550,7 @@ module.exports = {
     signupCompleteFunction,
     resendOtpFunction,
     forgotPasswordFunction,
+    verifyForgotPasswordOtpFunction,
     resetPasswordFunction,
     refreshTokenFunction,
     logoutFunction

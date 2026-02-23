@@ -1,4 +1,6 @@
 const feedbackModel = require("../models/feedbackModel");
+const contributionModel = require("../models/contributionModel");
+const rewardModel = require("../models/rewardModel");
 
 /**
  * Submit user feedback with rate limiting
@@ -48,6 +50,24 @@ const submitFeedback = async (req, res) => {
         });
 
         await feedback.save();
+
+        // Record contribution for Report Helper badge & points
+        try {
+            await contributionModel.create({
+                userId,
+                type: 'incorrect_report',
+                pointsAwarded: 20,
+                details: { subject: subject.trim() }
+            });
+
+            await rewardModel.findOneAndUpdate(
+                { userId },
+                { $inc: { userPoint: 20 } },
+                { upsert: true }
+            );
+        } catch (contributeError) {
+            console.error("Failed to record feedback contribution:", contributeError);
+        }
 
         // Calculate remaining submissions
         const remaining = 5 - (recentSubmissions + 1);
