@@ -3,7 +3,7 @@ const axios = require('axios');
 /**
  * Standalone function to send push notifications via Expo API
  */
-const dispatchPushNotification = async (tokens, title, body, data) => {
+const dispatchPushNotification = async (tokens, title, body, data, badge = null) => {
     try {
         if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
             console.warn("No valid tokens provided for push dispatch");
@@ -15,7 +15,8 @@ const dispatchPushNotification = async (tokens, title, body, data) => {
             sound: 'default',
             title,
             body,
-            data: data || {}
+            data: data || {},
+            badge: badge !== null ? badge : undefined
         }));
 
         const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';

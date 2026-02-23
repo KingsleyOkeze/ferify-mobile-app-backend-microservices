@@ -9,7 +9,7 @@ const contributionSchema = new mongoose.Schema({
     type: {
         type: String,
         required: true,
-        enum: ['fare_submission', 'route_confirmation', 'location_update']
+        enum: ['fare_submission', 'route_confirmation', 'location_update', 'incorrect_report']
     },
     pointsAwarded: {
         type: Number,
@@ -17,10 +17,6 @@ const contributionSchema = new mongoose.Schema({
     },
     details: {
         type: mongoose.Schema.Types.Mixed // Metadata like from/to, vehicle, price
-    },
-    timestamp: {
-        type: Date,
-        default: Date.now
     }
 }, { timestamps: true });
 

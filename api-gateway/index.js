@@ -4,9 +4,13 @@ const cors = require("cors");
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { limiter } = require('./configs/configs');
 const { internalSecretHeader } = require("./middlewares/internalSecretHeader")
+const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET_KEY;
 const userAuth = require("./middlewares/userAuth");
+const jwt = require("jsonwebtoken");
+const url = require("url");
 const app = express();
 const PORT = process.env.PORT || 5000;
+const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 app.use((req, res, next) => {
     console.log('--- GATEWAY INBOUND ---');
     console.log(`Method: ${req.method}`);
@@ -80,14 +84,28 @@ app.use("/api/fare", userAuth, createProxyMiddleware({
     ws: true // Enable WebSocket proxy
 }));
 
-// Routes - Notification Service (Private History & Socket)
-app.use("/api/notification", userAuth, createProxyMiddleware({
+const notificationProxy = createProxyMiddleware({
     target: process.env.NOTIFICATION_SERVICE_URL,
     pathRewrite: { '^/api/notification': '' },
     changeOrigin: true,
-    ws: true // Enable WebSocket proxy
-}));
+    ws: true,
+    onProxyReqWs: (proxyReq, req, socket, options, head) => {
+        console.log(`[WS Proxy] Outbound request path: ${proxyReq.path}`);
+        // Inject the internal secret key so the notification service accepts the request
+        proxyReq.setHeader('x-internal-secret', INTERNAL_SECRET_KEY);
 
+        if (req.headers['x-user-id']) {
+            proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
+        }
+    },
+    onError: (err, req, res) => {
+        console.error('[WS Proxy Error]', err);
+    },
+    logger: console, // Added for debugging
+});
+
+// Routes - Notification Service
+app.use("/api/notification", userAuth, notificationProxy);
 
 // Routes - Location Service (Private - inside fare-service)
 app.use("/api/location", userAuth, createProxyMiddleware({
@@ -104,7 +122,46 @@ app.use("/api/route", userAuth, createProxyMiddleware({
 }));
 
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`API GATEWAY LISTENING ON PORT ${PORT}`)
 })
 
+// Correctly handle WebSocket upgrades for proxied services with manual auth & rewrite
+server.on('upgrade', (req, socket, head) => {
+    const parsedUrl = url.parse(req.url, true);
+
+    if (parsedUrl.pathname && parsedUrl.pathname.startsWith('/api/notification')) {
+        console.log(`[WS Upgrade] Handling notification socket: ${req.url}`);
+
+        // WebSocket Upgrade requests bypass Express middleware, so we must auth manually
+        const token = parsedUrl.query.token;
+        if (!token) {
+            console.log('❌ [WS Upgrade] Access Denied: No token in query string');
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+
+        try {
+            const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
+            console.log(`✅ [WS Upgrade] Authenticated user: ${decoded.userId}`);
+
+            // Manually inject headers for downstream services
+            req.headers['x-user-id'] = decoded.userId;
+            req.headers['x-internal-secret'] = INTERNAL_SECRET_KEY;
+
+            console.log(`[WS Upgrade] Original request URL: ${req.url}`);
+
+            // Apply path rewrite manually as notificationProxy.upgrade might not do it automatically from the raw req
+            req.url = req.url.replace(/^\/api\/notification/, '');
+
+            console.log(`[WS Upgrade] Rewritten request URL for downstream: ${req.url}`);
+
+            notificationProxy.upgrade(req, socket, head);
+        } catch (err) {
+            console.log('❌ [WS Upgrade] Auth Failed:', err.message);
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+        }
+    }
+});

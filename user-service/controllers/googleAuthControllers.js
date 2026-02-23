@@ -7,6 +7,9 @@ const {
     accessTokenSecret,
     refreshTokenSecret,
 } = require("../configs/configs");
+// Initialize Settings Models
+const privacyModel = require("../models/privacyModel");
+const notificationSettingsModel = require("../models/notificationSettingsModel");
 
 // Initialize Google Client
 // You can use any client ID here as the library verifies against the token's audience
@@ -18,12 +21,9 @@ const sendWelcomeEmail = (firstName, lastName, email) => {
         internalApi.post(
             `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/welcome`,
             {
-                params: {
-                    normalizedEmail: email.trim(),
-                    firstName: firstName,
-                    lastName: lastName,
-                },
-                // timeout: 50000 // Let not set timeout for notification service
+                normalizedEmail: email.trim(),
+                firstName: firstName,
+                lastName: lastName,
             }
         );
     } catch (error) {
@@ -36,12 +36,9 @@ const sendCompletedProfileSetupSuccessEmail = (firstName, lastName, email) => {
         internalApi.post(
             `${process.env.NOTIFICATION_SERVICE_URL}/notification/email/setup-complete`,
             {
-                params: {
-                    normalizedEmail: email.trim(),
-                    firstName: firstName,
-                    lastName: lastName,
-                },
-                // timeout: 50000 // Let not set timeout for notification service
+                normalizedEmail: email.trim(),
+                firstName: firstName,
+                lastName: lastName,
             }
         );
     } catch (error) {
@@ -58,7 +55,8 @@ const googleLoginFunction = async (req, res) => {
     }
 
     console.log("Audience expecting:", [
-        process.env.GOOGLE_CLIENT_ID_ANDROID, // Note: use android debug id for dev and android release id for prod.
+        process.env.GOOGLE_CLIENT_ID_ANDROID_DEBUG,
+        process.env.GOOGLE_CLIENT_ID_ANDROID_RELEASE,
         process.env.GOOGLE_CLIENT_ID_IOS,
         process.env.GOOGLE_CLIENT_ID_WEB
     ]);
@@ -66,16 +64,19 @@ const googleLoginFunction = async (req, res) => {
     console.log("Incoming token:", typeof idToken, idToken?.slice(0, 20));
 
 
+    // Automatically include BOTH debug and release in audience
+    const audience = [
+        process.env.GOOGLE_CLIENT_ID_WEB,
+        process.env.GOOGLE_CLIENT_ID_IOS,
+        process.env.GOOGLE_CLIENT_ID_ANDROID_DEBUG,   // Accept debug tokens
+        process.env.GOOGLE_CLIENT_ID_ANDROID_RELEASE, // Accept release tokens
+    ].filter(Boolean); // Remove any undefined values
+
     try {
         // Verify the ID Token
         const ticket = await client.verifyIdToken({
             idToken: idToken,
-            audience: [
-                process.env.GOOGLE_CLIENT_ID_ANDROID,
-                process.env.GOOGLE_CLIENT_ID_IOS,
-                process.env.GOOGLE_CLIENT_ID_WEB
-            ],
-            // Specify all your client IDs here
+            audience: audience, // Accepts BOTH debug and release!
         });
 
         const payload = ticket.getPayload();
@@ -87,7 +88,7 @@ const googleLoginFunction = async (req, res) => {
 
         // 1. Try to find user by unique Google ID (the 'sub' field)
         let user = await userModel.findOne({ googleId: sub });
-        let isNewUser= false;
+        let isNewUser = false;
 
         if (!user) {
             // 2. If no googleId match, check if email exists from a previous manual signup
@@ -116,6 +117,11 @@ const googleLoginFunction = async (req, res) => {
                     linkedAccount: ["Google"],
                     profilePhoto: picture,
                 });
+
+                await Promise.all([
+                    privacyModel.create({ userId: user._id }),
+                    notificationSettingsModel.create({ userId: user._id })
+                ]);
 
                 user ? sendWelcomeEmail(email, given_name, family_name) : null;
                 user ? sendCompletedProfileSetupSuccessEmail(email, given_name, family_name) : null;

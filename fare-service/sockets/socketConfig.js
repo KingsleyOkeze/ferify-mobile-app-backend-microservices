@@ -29,7 +29,7 @@ const initializeSocket = (httpServer) => {
         //     next(new Error('Invalid token'));
         // }
 
-      
+
         const id = socket.handshake.auth.userId;
 
         try {

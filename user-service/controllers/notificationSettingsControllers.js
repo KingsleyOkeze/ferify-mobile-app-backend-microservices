@@ -10,7 +10,11 @@ const getNotificationSettings = async (req, res) => {
         }
 
         return res.status(200).json({
-            settings: user.notificationSettings || { communityActivity: false, tipsAndInsight: true }
+            settings: user.notificationSettings || {
+                communityActivity: false,
+                tipsAndInsight: true,
+                notificationSound: true
+            }
         });
     } catch (error) {
         console.error("Get notification settings error:", error);
@@ -34,6 +38,7 @@ const updateNotificationSettings = async (req, res) => {
 
         if (communityActivity !== undefined) user.notificationSettings.communityActivity = communityActivity;
         if (tipsAndInsight !== undefined) user.notificationSettings.tipsAndInsight = tipsAndInsight;
+        if (req.body.notificationSound !== undefined) user.notificationSettings.notificationSound = req.body.notificationSound;
 
         await user.save();
 

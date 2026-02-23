@@ -4,7 +4,7 @@ const axiosRetry = require('axios-retry').default;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
 const googleMapsApi = axios.create({
-    timeout: 60000, //60 seconds
+    timeout: 60000, // 60 seconds
     // You could set the baseURL here if all calls start with the same path:
     // baseURL: 'https://maps.googleapis.com/maps/api/', 
 });

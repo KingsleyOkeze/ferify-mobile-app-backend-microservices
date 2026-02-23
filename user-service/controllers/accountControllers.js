@@ -1,18 +1,13 @@
 const userModel = require("../models/userModel");
 const rewardModel = require("../models/rewardModel");
 const contributionModel = require("../models/contributionModel");
+const privacyModel = require("../models/privacyModel");
 const otpModel = require("../models/otpModel");
 const internalApi = require("../configs/internalApi");
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
 
-// Configure Cloudinary
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
 const getProfile = async (req, res) => {
     const userId = req.headers['x-user-id'];
@@ -31,7 +26,8 @@ const getProfile = async (req, res) => {
             phone: user.phoneNumber,
             profilePhoto: user.profilePhoto,
             avatarColor: user.avatarColor,
-            location: user.lastKnownAddress
+            location: user.lastKnownAddress,
+            createdAt: user.createdAt
         });
     } catch (error) {
         console.error("Get profile error:", error);
@@ -118,12 +114,10 @@ const updateUserEmail = async (req, res) => {
 
         // Send OTP via notification service
         internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/verify-signup`, {
-            params: {
-                normalizedEmail: newEmail,
-                firstName: user.firstName || 'User',
-                lastName: user.lastName || '',
-                otp
-            }
+            normalizedEmail: newEmail,
+            firstName: user.firstName || 'User',
+            lastName: user.lastName || '',
+            otp
         }).catch(err => console.error("Email update OTP notification failed:", err.message));
 
         res.status(200).json({ message: "Verification code sent to your new email." });
@@ -261,12 +255,10 @@ const initiatePasswordReset = async (req, res) => {
 
         // Send OTP via notification service
         internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/notification/email/forgot-password`, {
-            params: {
-                normalizedEmail: user.email,
-                firstName: user.firstName || 'User',
-                lastName: user.lastName || '',
-                otp
-            }
+            normalizedEmail: user.email,
+            firstName: user.firstName || 'User',
+            lastName: user.lastName || '',
+            otp
         }).catch(err => console.error("Password reset OTP notification failed:", err.message));
 
         res.status(200).json({ message: "Verification code sent to your email." });
@@ -370,7 +362,9 @@ const updateUserLocation = async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        if (!user.privacy.shareLocationData) {
+        const privacy = await privacyModel.findOne({ userId });
+
+        if (privacy && !privacy.shareLocationData) {
             return res.status(200).json({ message: "Location update skipped due to privacy settings" });
         }
 
@@ -420,7 +414,11 @@ const getNearbyPushTokens = async (req, res) => {
             return res.status(400).json({ error: "Coordinates are required" });
         }
 
+        const privacyModel = require("../models/privacyModel");
+        const privateUserIds = await privacyModel.find({ shareLocationData: false }).distinct('userId');
+
         const nearbyUsers = await userModel.find({
+            _id: { $nin: privateUserIds },
             location: {
                 $near: {
                     $geometry: {
@@ -430,9 +428,9 @@ const getNearbyPushTokens = async (req, res) => {
                     $maxDistance: parseInt(radius)
                 }
             },
-            pushToken: { $ne: null, $exists: true },
-            'privacy.shareLocationData': true
+            pushToken: { $ne: null, $exists: true }
         }).select('pushToken');
+
 
         const tokens = [...new Set(nearbyUsers.map(u => u.pushToken).filter(Boolean))];
         res.status(200).json({ tokens });
@@ -449,10 +447,15 @@ const getRouteContributorsTokens = async (req, res) => {
             return res.status(400).json({ error: "User IDs array required" });
         }
 
+        const notificationSettingsModel = require("../models/notificationSettingsModel");
+        const optingInUserIds = await notificationSettingsModel.find({
+            userId: { $in: userIds },
+            communityActivity: true
+        }).distinct('userId');
+
         const users = await userModel.find({
-            _id: { $in: userIds },
-            pushToken: { $ne: null },
-            'notificationSettings.communityActivity': true
+            _id: { $in: optingInUserIds },
+            pushToken: { $ne: null }
         }).select('pushToken');
 
         const tokens = users.map(u => u.pushToken);
@@ -473,14 +476,17 @@ const getUserPushData = async (req, res) => {
             return res.status(400).json({ error: "User ID is required" });
         }
 
-        const user = await userModel.findById(userId).select('pushToken notificationSettings');
+        const user = await userModel.findById(userId).select('pushToken');
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
 
+        const notificationSettingsModel = require("../models/notificationSettingsModel");
+        const settings = await notificationSettingsModel.findOne({ userId });
+
         res.status(200).json({
             pushToken: user.pushToken,
-            notificationSettings: user.notificationSettings
+            notificationSettings: settings || { communityActivity: false, tipsAndInsight: true, notificationSound: true }
         });
     } catch (error) {
         console.error("Internal get user push data error:", error);

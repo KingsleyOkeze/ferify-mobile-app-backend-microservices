@@ -29,7 +29,7 @@ async function renderTemplate(templateName, replacements = {}) {
 // 1. Verify Signup Email
 // ────────────────────────────────────────────────
 const sendVerifySignupEmail = async (req, res) => {
-    const { normalizedEmail, firstName, lastName, otp } = req.query;
+    const { normalizedEmail, firstName, lastName, otp } = req.body;
 
     if (!normalizedEmail || !otp) {
         return res.status(400).json({ error: 'Missing required fields: email and otp' });
@@ -56,7 +56,7 @@ const sendVerifySignupEmail = async (req, res) => {
 // 2. Reset Password OTP
 // ────────────────────────────────────────────────
 const sendResetPasswordEmail = async (req, res) => {
-    const { normalizedEmail, firstName, lastName, otp } = req.query;
+    const { normalizedEmail, firstName, lastName, otp } = req.body;
 
     if (!normalizedEmail || !otp) {
         return res.status(400).json({ error: 'Missing required fields: email and otp' });
@@ -83,7 +83,7 @@ const sendResetPasswordEmail = async (req, res) => {
 // 3. Welcome Email
 // ────────────────────────────────────────────────
 const sendWelcomeEmail = async (req, res) => {
-    const { normalizedEmail, firstName, lastName } = req.query;
+    const { normalizedEmail, firstName, lastName } = req.body;
 
     if (!normalizedEmail) {
         return res.status(400).json({ error: 'Missing required field: email' });
@@ -109,7 +109,7 @@ const sendWelcomeEmail = async (req, res) => {
 // 4. Successful Profile Setup
 // ────────────────────────────────────────────────
 const sendSetupCompleteEmail = async (req, res) => {
-    const { normalizedEmail, firstName, lastName } = req.query;
+    const { normalizedEmail, firstName, lastName } = req.body;
 
     if (!normalizedEmail) {
         return res.status(400).json({ error: 'Missing required field: email' });
@@ -135,7 +135,7 @@ const sendSetupCompleteEmail = async (req, res) => {
 // 5. Login Verification (OTP)
 // ────────────────────────────────────────────────
 const sendLoginVerificationEmail = async (req, res) => {
-    const { normalizedEmail, firstName, lastName, otp } = req.query;
+    const { normalizedEmail, firstName, lastName, otp } = req.body;
 
     if (!normalizedEmail || !otp) {
         return res.status(400).json({ error: 'Missing required fields: email and otp' });

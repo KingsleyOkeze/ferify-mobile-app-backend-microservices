@@ -1,11 +1,7 @@
 const internalApi = require("../configs/internalApi");
 const googleMapsApi = require("../configs/googleMapApi");
-const redis = require("redis");
+const client = require("../configs/redisConfig");
 
-const client = redis.createClient();
-client.connect()
-    .then(() => console.log("✅ Connected to Redis"))
-    .catch(err => console.error("Redis connection error:", err));
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
@@ -38,12 +34,12 @@ const placeSearchFunction = async (req, res) => {
                 input: query,
                 // Your Places API Key
                 key: GOOGLE_PLACES_API_KEY,
-                // Optional: Restrict results to Nigeria for relevance
+                // Restrict results to Nigeria for relevance
                 components: 'country:ng',
-                // Optional: Focus on addresses and geographic places
+                // Focus on addresses and geographic places
                 types: 'geocode',
             },
-            timeout: 2500, // Prevent hanging on slow Google response
+            timeout: 60000, // Prevent hanging on slow Google response
         });
 
         // HANDLE API STATUS AND ERRORS

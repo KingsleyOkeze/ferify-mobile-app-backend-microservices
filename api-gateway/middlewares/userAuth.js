@@ -6,18 +6,22 @@ const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
 const userAuth = async (req, res, next) => {
 
     try {
+        console.log(`[AUTH] Checking token for path: ${req.path}`);
         const authHeader = req.header("Authorization");
-        console.log('Authorization header:', authHeader);
+        const queryToken = req.query.token;
 
-        if (!authHeader) {
-            console.log("No Authorization header found for User!");
+        if (authHeader) console.log('[AUTH] Found Authorization header');
+        if (queryToken) console.log('[AUTH] Found Query token');
+
+        if (!authHeader && !queryToken) {
+            console.log("❌ [AUTH] No token provided!");
             return res.status(401).json({ error: "No token provided!" });
         }
 
-        const token = authHeader.replace("Bearer ", "");
-        console.log('Token:', token);
+        const token = authHeader ? authHeader.replace("Bearer ", "") : queryToken;
 
         const decoded = jwt.verify(token, accessTokenSecret);
+        console.log(`✅ [AUTH] Token verified for user: ${decoded.userId}`);
 
         if (!decoded || !decoded.userId) {
             return res.status(401).json({ error: "Session token expired or invalid!" });

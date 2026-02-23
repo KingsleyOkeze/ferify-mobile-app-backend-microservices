@@ -1,15 +1,17 @@
-const userModel = require("../models/userModel");
+const privacyModel = require("../models/privacyModel");
 
 const getPrivacySettings = async (req, res) => {
     const userId = req.headers['x-user-id'];
 
     try {
-        const user = await userModel.findById(userId).select('privacy');
-        if (!user) {
-            return res.status(404).json({ error: "User not found" });
+        let privacy = await privacyModel.findOne({ userId });
+
+        // Lazy create if not exists
+        if (!privacy) {
+            privacy = await privacyModel.create({ userId });
         }
 
-        return res.status(200).json({ privacy: user.privacy });
+        return res.status(200).json({ privacy });
     } catch (error) {
         console.error("Get privacy settings error:", error);
         return res.status(500).json({ error: "Internal server error" });
@@ -21,21 +23,20 @@ const updatePrivacySettings = async (req, res) => {
     const { profileVisibility, contributionVisibility, shareLocationData } = req.body;
 
     try {
-        const user = await userModel.findById(userId);
-        if (!user) {
-            return res.status(404).json({ error: "User not found" });
-        }
+        const updateData = {};
+        if (profileVisibility !== undefined) updateData.profileVisibility = profileVisibility;
+        if (contributionVisibility !== undefined) updateData.contributionVisibility = contributionVisibility;
+        if (shareLocationData !== undefined) updateData.shareLocationData = shareLocationData;
 
-        // Update fields if provided
-        if (profileVisibility !== undefined) user.privacy.profileVisibility = profileVisibility;
-        if (contributionVisibility !== undefined) user.privacy.contributionVisibility = contributionVisibility;
-        if (shareLocationData !== undefined) user.privacy.shareLocationData = shareLocationData;
-
-        await user.save();
+        const privacy = await privacyModel.findOneAndUpdate(
+            { userId },
+            { $set: updateData },
+            { new: true, upsert: true }
+        );
 
         return res.status(200).json({
             message: "Privacy settings updated successfully",
-            privacy: user.privacy
+            privacy
         });
     } catch (error) {
         console.error("Update privacy settings error:", error);

@@ -76,35 +76,9 @@ const userSchema = new mongoose.Schema(
 			unique: true,
 			sparse: true
 		},
-		privacy: {
-			profileVisibility: {
-				type: String,
-				enum: ['public', 'private'],
-				default: 'public'
-			},
-			contributionVisibility: {
-				type: String,
-				enum: ['everyone', 'community', 'private'],
-				default: 'everyone'
-			},
-			shareLocationData: {
-				type: Boolean,
-				default: true
-			}
-		},
 		pushToken: {
 			type: String,
 			default: null
-		},
-		notificationSettings: {
-			communityActivity: {
-				type: Boolean,
-				default: false
-			},
-			tipsAndInsight: {
-				type: Boolean,
-				default: true
-			}
 		}
 	},
 	{ timestamps: true }

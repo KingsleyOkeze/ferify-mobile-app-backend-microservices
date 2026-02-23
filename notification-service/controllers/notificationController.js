@@ -1,4 +1,4 @@
-const Notification = require('../models/notificationModel');
+const notificationModel = require('../models/notificationModel');
 const { dispatchPushNotification } = require('./pushControllers');
 const internalApi = require('../configs/internalApi');
 
@@ -66,7 +66,8 @@ const createInternalNotification = async (req, res) => {
         (async () => {
             try {
                 const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
-                const pushDataResponse = await internalApi.get(`${userServiceUrl}/api/user/account/internal/push-data?userId=${userId}`);
+                // Use direct service route, not gateway route
+                const pushDataResponse = await internalApi.get(`${userServiceUrl}/internal/push-data?userId=${userId}`);
                 const { pushToken, notificationSettings } = pushDataResponse.data;
 
                 if (pushToken && notificationSettings) {
@@ -84,11 +85,16 @@ const createInternalNotification = async (req, res) => {
                     }
 
                     if (shouldSend) {
+                        // Calculate unread count for badge
+                        const unreadCount = await notificationModel.countDocuments({ userId, isRead: false });
+                        console.log(`[Push Badge] Sending badge count: ${unreadCount} for user ${userId}`);
+
                         await dispatchPushNotification(
                             [pushToken],
                             title,
                             description,
-                            { ...data, screen: '/notification/NotificationScreen' }
+                            { ...data, screen: '/notification/NotificationScreen' },
+                            unreadCount
                         );
                     }
                 }

@@ -145,6 +145,22 @@ const submitFarePriceFunction = async (req, res) => {
         (async () => {
             try {
                 const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:5004';
+                const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
+
+                // Record Contribution in user-service (Points & Badges)
+                await internalApi.post(`${userServiceUrl}/api/user/contribution/record`, {
+                    userId,
+                    type: 'fare_submission',
+                    points: 50,
+                    details: {
+                        contributionId: newContribution._id,
+                        from: fromLocation.raw,
+                        to: toLocation.raw,
+                        vehicleType
+                    }
+                }).catch(err => console.error("Failed to record contribution in user-service:", err.message));
+
+                // Create internal notification 
                 await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
                     userId: userId,
                     type: 'fare_verified',
@@ -157,11 +173,11 @@ const submitFarePriceFunction = async (req, res) => {
             }
         })();
 
-        res.status(201).json({ message: "Contribution received. Thank you!", newContribution });
+        return res.status(201).json({ message: "Contribution received. Thank you!", newContribution });
 
     } catch (error) {
         console.error("Submission error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -169,59 +185,81 @@ const getNearbyFaresFunction = async (req, res) => {
     try {
         const { lng, lat, radius = 5000 } = req.query; // Default 5km radius
 
-        let query = { isFlagged: false };
-        let options = {};
+        let pipeline = [
+            { $match: { isFlagged: false } }
+        ];
 
-        // If location is provided, use geospatial search
+        // 1. Geospatial search if coordinates provided
         if (lng && lat) {
-            query.location = {
-                $near: {
-                    $geometry: {
-                        type: "Point",
-                        coordinates: [parseFloat(lng), parseFloat(lat)]
-                    },
-                    $maxDistance: parseInt(radius)
+            pipeline.unshift({
+                $geoNear: {
+                    near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+                    distanceField: "dist.calculated",
+                    maxDistance: parseInt(radius),
+                    spherical: true
                 }
-            };
+            });
         }
 
-        // Limit results to the last 7 days
+        // 2. Filter by time (7 days)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        query.timestamp = { $gte: sevenDaysAgo };
+        pipeline.push({ $match: { timestamp: { $gte: sevenDaysAgo } } });
 
-        let nearbyFares = await contributionModel.find(query)
-            .sort({ timestamp: -1 })
-            .limit(3);
+        // 3. Group by Route & Vehicle Type
+        pipeline.push({
+            $group: {
+                _id: {
+                    from: "$origin.raw",
+                    to: "$destination.raw",
+                    vehicleType: "$vehicleType"
+                },
+                minFare: { $min: "$fareAmount" },
+                maxFare: { $max: "$fareAmount" },
+                lastTimestamp: { $max: "$timestamp" },
+                contributorCount: { $sum: 1 }
+            }
+        });
+
+        // 4. Sort and Limit
+        pipeline.push(
+            { $sort: { lastTimestamp: -1 } },
+            { $limit: 3 }
+        );
+
+        let nearbyResults = await contributionModel.aggregate(pipeline);
 
         let isLocal = true;
-
-        // If no nearby fares found, we just return empty list (handled by frontend empty state)
-        if (nearbyFares.length === 0) {
-            isLocal = true; // Technically still "local" context, just empty
+        if (nearbyResults.length === 0) {
+            isLocal = true;
         }
 
+        // Format for mobile app
+        const formattedFares = nearbyResults.map((fare, idx) => {
+            const min = Math.round(fare.minFare);
+            const max = Math.round(fare.maxFare);
+            const priceRange = min === max ? `₦${min}` : `₦${min} - ₦${max}`;
 
-        // Format for mobile app (matching sharedFares structure)
-        const formattedFares = nearbyFares.map(fare => ({
-            id: fare._id,
-            from: fare.origin.raw.split(',')[0], // Take city/area part
-            to: fare.destination.raw.split(',')[0],
-            time: formatTimeAgo(fare.timestamp),
-            contributors: 1, // Individual contribution for feed
-            priceRange: `₦${fare.fareAmount}`,
-            vehicleType: fare.vehicleType,
-            image: getTransportImage(fare.vehicleType)
-        }));
+            return {
+                id: `nearby-${idx}`,
+                from: fare._id.from.split(',')[0],
+                to: fare._id.to.split(',')[0],
+                time: formatTimeAgo(fare.lastTimestamp),
+                contributors: fare.contributorCount,
+                priceRange: priceRange,
+                vehicleType: fare._id.vehicleType,
+                image: getTransportImage(fare._id.vehicleType)
+            };
+        });
 
-        res.status(200).json({
+        return res.status(200).json({
             fares: formattedFares,
             isLocal
         });
 
     } catch (error) {
         console.error("Nearby fares error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -321,11 +359,11 @@ const getFareEstimateFunction = async (req, res) => {
             { upsert: true, new: true }
         );
 
-        res.status(200).json(estimateData);
+        return res.status(200).json(estimateData);
 
     } catch (error) {
         console.error("Estimation error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -341,27 +379,48 @@ const getPopularRoutesFunction = async (req, res) => {
                     _id: { from: "$origin.raw", to: "$destination.raw" },
                     count: { $sum: 1 },
                     avgFare: { $avg: "$fareAmount" },
-                    vehicleType: { $first: "$vehicleType" }
+                    minFare: { $min: "$fareAmount" },
+                    maxFare: { $max: "$fareAmount" },
+                    vehicleType: { $first: "$vehicleType" },
+                    lastTimestamp: { $max: "$timestamp" }
                 }
             },
-            { $sort: { count: -1 } },
+            { $sort: { lastTimestamp: -1 } },
             { $limit: 4 }
         ]);
 
-        const formatted = popular.map((p, idx) => ({
-            id: `pop-${idx}`,
-            route: `${p._id.from.split(',')[0]} - ${p._id.to.split(',')[0]}`,
-            priceRange: `₦${Math.round(p.avgFare)}`,
-            time: "Popular Now",
-            points: 80,
-            vehicleType: p.vehicleType,
-            image: getTransportImage(p.vehicleType)
-        }));
+        const formatted = popular.map((p, idx) => {
+            const min = Math.round(p.minFare);
+            const max = Math.round(p.maxFare);
+            const priceRange = min === max ? `₦${min}` : `₦${min} - ₦${max}`;
 
-        res.status(200).json(formatted);
+            // Helper to format as "3:55pm"
+            const formatTime = (date) => {
+                const d = new Date(date);
+                let hours = d.getHours();
+                const minutes = d.getMinutes();
+                const ampm = hours >= 12 ? 'pm' : 'am';
+                hours = hours % 12;
+                hours = hours ? hours : 12; // the hour '0' should be '12'
+                const strMinutes = minutes < 10 ? '0' + minutes : minutes;
+                return hours + ':' + strMinutes + ampm;
+            };
+
+            return {
+                id: `pop-${idx}`,
+                route: `${p._id.from.split(',')[0]} - ${p._id.to.split(',')[0]}`,
+                priceRange,
+                time: formatTime(p.lastTimestamp),
+                points: 80,
+                vehicleType: p.vehicleType,
+                image: getTransportImage(p.vehicleType)
+            };
+        });
+
+        return res.status(200).json(formatted);
     } catch (error) {
         console.error("Popular routes error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -420,10 +479,10 @@ const getCommunityInsightsFunction = async (req, res) => {
             }
         ];
 
-        res.status(200).json(insights);
+        return res.status(200).json(insights);
     } catch (error) {
         console.error("Community insights error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -437,13 +496,13 @@ const deleteUserContributions = async (req, res) => {
         const result = await contributionModel.deleteMany({ userId });
         console.log(`Deleted ${result.deletedCount} contributions for user ${userId}`);
 
-        res.status(200).json({
+        return res.status(200).json({
             message: "User contributions deleted successfully",
             deletedCount: result.deletedCount
         });
     } catch (error) {
         console.error("Delete user contributions error:", error);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error" });
     }
 };
 
