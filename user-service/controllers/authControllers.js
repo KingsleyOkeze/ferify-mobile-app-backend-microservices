@@ -357,7 +357,7 @@ const forgotPasswordFunction = async (req, res) => {
         }
 
         // Generate OTP
-        const otp = generateOTP(6);
+        const otp = generateOTP(4);
         const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
         // Store otp for the user in Redis 

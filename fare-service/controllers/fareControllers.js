@@ -157,9 +157,13 @@ const submitFarePriceFunction = async (req, res) => {
                         contributionId: newContribution._id,
                         from: fromLocation.raw,
                         to: toLocation.raw,
-                        vehicleType
+                        vehicleType,
+                        fareAmount: Number(fareAmount),
+                        timeOfDay
                     }
-                }).catch(err => console.error("Failed to record contribution in user-service:", err.message));
+                })
+                    .then(() => console.log(`[MIRROR] Successfully recorded contribution for user ${userId}`))
+                    .catch(err => console.error(`[MIRROR] Failed to record contribution for user ${userId}:`, err.message));
 
                 // Create internal notification 
                 await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
@@ -190,7 +194,7 @@ const getNearbyFaresFunction = async (req, res) => {
             { $match: { isFlagged: false } }
         ];
 
-        // 1. Geospatial search if coordinates provided
+        // Geospatial search if coordinates provided
         if (lng && lat) {
             pipeline.unshift({
                 $geoNear: {
@@ -202,12 +206,12 @@ const getNearbyFaresFunction = async (req, res) => {
             });
         }
 
-        // 2. Filter by time (7 days)
+        // Filter by time (7 days)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         pipeline.push({ $match: { timestamp: { $gte: sevenDaysAgo } } });
 
-        // 3. Group by Route & Vehicle Type
+        // Group by Route & Vehicle Type
         pipeline.push({
             $group: {
                 _id: {

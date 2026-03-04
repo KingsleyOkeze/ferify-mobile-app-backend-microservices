@@ -35,7 +35,7 @@ const getBadges = async (req, res) => {
         const reward = await rewardModel.findOne({ userId });
         const earnedBadges = reward ? reward.earnedBadges : [];
 
-        // 1. Fetch relevant counts from the database
+        // Fetch relevant counts from the database
         const totalContributions = await contributionModel.countDocuments({ userId });
         const fareSubmissions = await contributionModel.countDocuments({ userId, type: 'fare_submission' });
         const routeConfirmations = await contributionModel.countDocuments({ userId, type: 'route_confirmation' });
@@ -52,7 +52,7 @@ const getBadges = async (req, res) => {
             'details.vehicleType': 'keke'
         });
 
-        // 2. Define Badge Metadata and logic
+        // Define Badge Metadata and logic
         const allBadges = [
             {
                 id: 'starter',

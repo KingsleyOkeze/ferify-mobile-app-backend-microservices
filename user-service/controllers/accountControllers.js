@@ -7,6 +7,7 @@ const internalApi = require("../configs/internalApi");
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
+const { generateOTP } = require("../configs/configs");
 
 
 const getProfile = async (req, res) => {
@@ -103,7 +104,7 @@ const updateUserEmail = async (req, res) => {
             return res.status(400).json({ error: "Email already in use by another account." });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+        const otp = generateOTP(4);
 
         // Save OTP
         await otpModel.findOneAndUpdate(
@@ -244,7 +245,7 @@ const initiatePasswordReset = async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4 digits
+        const otp = generateOTP(4);
 
         // Save OTP
         await otpModel.findOneAndUpdate(

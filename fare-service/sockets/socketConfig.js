@@ -15,21 +15,7 @@ const initializeSocket = (httpServer) => {
 
     // Middleware: Authenticate socket connection with JWT
     io.use((socket, next) => {
-        // Apply the access token verification when doing upgrade 
-        // const token = socket.handshake.auth.token;
-        // if (!token) {
-        //     return next(new Error('Authentication error!'));
-        // }
-
-        // try {
-        //     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-        //     socket.userId = decoded.userId; // Attach userId to socket
-        //     next();
-        // } catch (err) {
-        //     next(new Error('Invalid token'));
-        // }
-
-
+        
         const id = socket.handshake.auth.userId;
 
         try {

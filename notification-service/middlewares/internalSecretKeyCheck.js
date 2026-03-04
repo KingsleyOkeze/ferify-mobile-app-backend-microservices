@@ -7,14 +7,14 @@ const TRUSTED_SECRET_KEY = process.env.INTERNAL_SECRET_KEY;
 const internalSecretKeyCheckMiddleware = (req, res, next) => {
     const receivedSecret = req.headers['x-internal-secret'];
 
-    // Check 1: Do we have a secret key configured?
+    // Do we have a secret key configured?
     if (!TRUSTED_SECRET_KEY) {
         console.error("Configuration Error: TRUSTED_SECRET_KEY not set in service.");
         // This is a server problem, not a client problem
         return res.status(500).send("Internal Server Error."); 
     }
 
-    // Check 2: Does the received header match the trusted key?
+    // Does the received header match the trusted key?
     if (receivedSecret === TRUSTED_SECRET_KEY) {
         // The request came from the trusted API Gateway. Allow access.
         next();

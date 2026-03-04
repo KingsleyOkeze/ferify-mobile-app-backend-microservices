@@ -11,15 +11,17 @@ const url = require("url");
 const app = express();
 const PORT = process.env.PORT || 5000;
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
-app.use((req, res, next) => {
-    console.log('--- GATEWAY INBOUND ---');
-    console.log(`Method: ${req.method}`);
-    console.log(`URL: ${req.url}`);
-    console.log(`Path: ${req.path}`);
-    console.log(`Headers: ${JSON.stringify(req.headers)}`);
-    console.log('-----------------------');
-    next();
-});
+
+// app.use((req, res, next) => {
+//     console.log('--- GATEWAY INBOUND ---');
+//     console.log(`Method: ${req.method}`);
+//     console.log(`URL: ${req.url}`);
+//     console.log(`Path: ${req.path}`);
+//     console.log(`Headers: ${JSON.stringify(req.headers)}`);
+//     console.log('-----------------------');
+//     next();
+// });
+
 app.use(cors({
     origin: '*', // Allow all
     methods: ["GET", "POST", "PUT", "DELETE"],

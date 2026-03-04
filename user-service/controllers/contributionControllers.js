@@ -1,22 +1,30 @@
+const mongoose = require("mongoose");
 const contributionModel = require("../models/contributionModel");
 const rewardModel = require("../models/rewardModel");
 const userModel = require("../models/userModel");
 const internalApi = require("../configs/internalApi");
 
 const getContributionOverview = async (req, res) => {
-    const userId = req.headers['x-user-id'];
+    let userId = req.headers['x-user-id'];
+    console.log(`[DEBUG] getContributionOverview called for x-user-id: ${userId}`);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
+        const objectUserId = new mongoose.Types.ObjectId(userId);
+        console.log(`[DEBUG] Querying with userId: ${userId} and objectUserId: ${objectUserId}`);
+
+        const userFilter = { $or: [{ userId: userId }, { userId: objectUserId }] };
+
         // Get or create rewards record
-        let rewards = await rewardModel.findOne({ userId });
+        let rewards = await rewardModel.findOne(userFilter);
         if (!rewards) {
-            rewards = await rewardModel.create({ userId, userPoint: 0, userBadge: 'Novice' });
+            rewards = await rewardModel.create({ userId: objectUserId, userPoint: 0, userBadge: 'Novice' });
         }
 
         // Aggregate some basic stats
-        const totalContributions = await contributionModel.countDocuments({ userId });
+        const totalContributions = await contributionModel.countDocuments(userFilter);
         const helpedStats = await contributionModel.countDocuments({
-            userId,
+            ...userFilter,
             type: { $in: ['fare_submission', 'route_confirmation'] }
         });
 
@@ -40,18 +48,26 @@ const getContributionOverview = async (req, res) => {
 };
 
 const getContributionHistory = async (req, res) => {
-    const userId = req.headers['x-user-id'];
-    const { type } = req.query; // e.g., fare_submission, route_confirmation
+    let userId = req.headers['x-user-id'];
+    console.log(`[DEBUG] getContributionHistory called for x-user-id: ${userId}, type: ${req.query.type}`);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const { type } = req.query;
 
     try {
-        const query = { userId };
+        const objectUserId = new mongoose.Types.ObjectId(userId);
+        const userFilter = { $or: [{ userId: userId }, { userId: objectUserId }] };
+
+        const query = { ...userFilter };
         if (type) {
             query.type = type;
         }
+        console.log(`[DEBUG] Querying history with:`, query);
 
         const history = await contributionModel.find(query)
-            .sort({ timestamp: -1 })
+            .sort({ createdAt: -1 })
             .limit(50);
+
+        console.log(`[DEBUG] Found ${history.length} history items`);
 
         return res.status(200).json({ history });
     } catch (error) {
@@ -63,26 +79,30 @@ const getContributionHistory = async (req, res) => {
 // Internal API called by other services
 const recordContribution = async (req, res) => {
     const { userId, type, points, details } = req.body;
+    console.log(`[DEBUG] recordContribution called for userId: ${userId}, type: ${type}`);
 
     if (!userId || !type) {
         return res.status(400).json({ error: "UserId and type are required" });
     }
 
     try {
+        const objectUserId = new mongoose.Types.ObjectId(userId);
+        const userFilter = { $or: [{ userId: userId }, { userId: objectUserId }] };
+
         // Record the individual log
+        console.log(`[DEBUG] Creating contribution record for ${objectUserId}`);
         await contributionModel.create({
-            userId,
+            userId: objectUserId,
             type,
             pointsAwarded: points || 10,
             details
         });
 
-        // Update the running total points
         const reward = await rewardModel.findOneAndUpdate(
-            { userId },
+            userFilter,
             {
                 $inc: { userPoint: points || 10 },
-                $set: { helpedCount: await contributionModel.countDocuments({ userId }) } // Sync helped count
+                $set: { helpedCount: await contributionModel.countDocuments(userFilter) } // Sync helped count
             },
             { upsert: true, new: true }
         );
@@ -105,15 +125,15 @@ const recordContribution = async (req, res) => {
 
             let count = 0;
             if (milestone.total) {
-                count = await contributionModel.countDocuments({ userId });
+                count = await contributionModel.countDocuments({ userId: objectUserId });
             } else if (milestone.vehicle) {
                 count = await contributionModel.countDocuments({
-                    userId,
+                    userId: objectUserId,
                     type: milestone.type,
                     'details.vehicleType': milestone.vehicle
                 });
             } else {
-                count = await contributionModel.countDocuments({ userId, type: milestone.type });
+                count = await contributionModel.countDocuments({ userId: objectUserId, type: milestone.type });
             }
 
             if (count >= milestone.threshold) {
@@ -155,17 +175,18 @@ const recordContribution = async (req, res) => {
     }
 };
 
-// Trust & Reputation
 const getTrustOverview = async (req, res) => {
-    const userId = req.headers['x-user-id'];
+    let userId = req.headers['x-user-id'];
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-        const user = await userModel.findById(userId);
+        const objectUserId = new mongoose.Types.ObjectId(userId);
+        const user = await userModel.findById(objectUserId);
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        let rewards = await rewardModel.findOne({ userId });
+        let rewards = await rewardModel.findOne({ userId: objectUserId });
         if (!rewards) {
-            rewards = await rewardModel.create({ userId });
+            rewards = await rewardModel.create({ userId: objectUserId });
         }
 
         // --- Refined Trust Score Calculation (0-100) ---
@@ -182,14 +203,14 @@ const getTrustOverview = async (req, res) => {
         score += breakdown.identity;
 
         // 2. Activity (Max 35 pts)
-        const totalContributions = await contributionModel.countDocuments({ userId });
+        const totalContributions = await contributionModel.countDocuments({ userId: objectUserId });
         breakdown.activity = Math.min(totalContributions * 3, 35);
         score += breakdown.activity;
 
         // 3. Community Impact & Reliability (Max 40 pts)
         // For MVP: Verifications and "Helped" stats
         const relevantContributions = await contributionModel.countDocuments({
-            userId,
+            userId: objectUserId,
             type: { $in: ['fare_submission', 'route_confirmation'] }
         });
         breakdown.impact = Math.min(relevantContributions * 5, 40);
