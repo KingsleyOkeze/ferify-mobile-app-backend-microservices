@@ -41,7 +41,7 @@ const upload = require("../middlewares/uploadMiddleware");
 
 const router = express.Router();
 
-router.get('/account/profile', getProfile);
+router.get('/profile', getProfile);
 router.post('/update-user-email', updateUserEmail);
 router.put('/update-full-name', updateFullName);
 router.post('/update-email/verify', verifyEmailUpdate);
