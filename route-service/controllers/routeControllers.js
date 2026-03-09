@@ -9,7 +9,33 @@ const googleAutocompleteUrl = "https://maps.googleapis.com/maps/api/place/autoco
 
 
 const placeSearchFunction = async (req, res) => {
-    // 1. INPUT VALIDATION
+    // 1. IP-BASED RATE LIMITING (Google Places API Protection)
+    // Extract IP safely, accounting for load balancers/proxies
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const rateLimitKey = `rate_limit:places:${clientIp}`;
+    const DAILY_LIMIT = 1000;
+
+    try {
+        // Increment the request count for this IP
+        const currentCount = await client.incr(rateLimitKey);
+
+        // If this is the first request of the day, set expiration to 24 hours
+        if (currentCount === 1) {
+            await client.expire(rateLimitKey, 86400);
+        }
+
+        // Block if limit exceeded
+        if (currentCount > DAILY_LIMIT) {
+            console.warn(`RATE LIMIT EXCEEDED for IP: ${clientIp} on Places Search`);
+            return res.status(429).json({ error: "Daily search limit reached. Try again tomorrow." });
+        }
+    } catch (redisError) {
+        console.error("Redis Rate Limiter Error (Failing Open to allow search):", redisError);
+        // We typically "fail open" here so a Redis hiccup doesn't break the whole app, 
+        // but log it extensively.
+    }
+
+    // 2. INPUT VALIDATION
     // Normalize and retrieve the search query from the request parameters.
     const query = req.query.query?.trim().toLowerCase();
     console.log("User search", query);
