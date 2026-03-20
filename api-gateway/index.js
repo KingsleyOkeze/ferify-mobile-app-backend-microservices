@@ -138,7 +138,7 @@ server.on('upgrade', (req, socket, head) => {
         // WebSocket Upgrade requests bypass Express middleware, so we must auth manually
         const token = parsedUrl.query.token;
         if (!token) {
-            console.log('❌ [WS Upgrade] Access Denied: No token in query string');
+            console.log('[WS Upgrade] Access Denied: No token in query string');
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
             return;
@@ -146,7 +146,7 @@ server.on('upgrade', (req, socket, head) => {
 
         try {
             const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
-            console.log(`✅ [WS Upgrade] Authenticated user: ${decoded.userId}`);
+            console.log(`[WS Upgrade] Authenticated user: ${decoded.userId}`);
 
             // Manually inject headers for downstream services
             req.headers['x-user-id'] = decoded.userId;
@@ -161,7 +161,7 @@ server.on('upgrade', (req, socket, head) => {
 
             notificationProxy.upgrade(req, socket, head);
         } catch (err) {
-            console.log('❌ [WS Upgrade] Auth Failed:', err.message);
+            console.log('[WS Upgrade] Auth Failed:', err.message);
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
         }

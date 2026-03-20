@@ -431,55 +431,127 @@ const getPopularRoutesFunction = async (req, res) => {
 
 const getCommunityInsightsFunction = async (req, res) => {
     try {
+        const { lng, lat } = req.query;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Total contributions today
-        const contributionsToday = await contributionModel.countDocuments({
-            timestamp: { $gte: today },
-            isFlagged: false
-        });
+        let geoNearStage = null;
+        if (lng && lat) {
+            geoNearStage = {
+                $geoNear: {
+                    near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+                    distanceField: "dist.calculated",
+                    maxDistance: 20000, // 20km
+                    spherical: true,
+                    query: { isFlagged: false }
+                }
+            };
+        }
 
-        // Active contributors today (distinct users)
-        const activeContributors = await contributionModel.distinct('userId', {
-            timestamp: { $gte: today },
-            isFlagged: false
-        });
-
-        // Find the most active route today
-        const topRoute = await contributionModel.aggregate([
+        // Find Top Local Route
+        const topRoutePipeline = [];
+        if (geoNearStage) topRoutePipeline.push(geoNearStage);
+        topRoutePipeline.push(
             { $match: { timestamp: { $gte: today }, isFlagged: false } },
             {
                 $group: {
                     _id: { from: "$origin.raw", to: "$destination.raw" },
-                    count: { $sum: 1 }
+                    count: { $sum: 1 },
+                    avgDist: { $avg: "$dist.calculated" }
                 }
             },
             { $sort: { count: -1 } },
             { $limit: 1 }
-        ]);
+        );
 
-        const routeName = topRoute.length > 0
-            ? `${topRoute[0]._id.from.split(',')[0]} → ${topRoute[0]._id.to.split(',')[0]}`
-            : "Live Community";
+        const topRouteResult = await contributionModel.aggregate(topRoutePipeline);
+        const topRoute = topRouteResult.length > 0 ? topRouteResult[0]._id : null;
+
+        // Calculate Dynamic Peak Hour and Surge % for the Top Route
+        let peakHourText = "7-9 AM"; // Default fallback
+        let surgePercent = 20; // Default
+        if (topRoute) {
+            const peakAnalysis = await contributionModel.aggregate([
+                {
+                    $match: {
+                        "origin.raw": topRoute.from,
+                        "destination.raw": topRoute.to,
+                        isFlagged: false
+                    }
+                },
+                {
+                    $group: {
+                        _id: { $hour: "$timestamp" },
+                        count: { $sum: 1 },
+                        avgFare: { $avg: "$fareAmount" }
+                    }
+                },
+                { $sort: { count: -1 } }
+            ]);
+
+            if (peakAnalysis.length > 0) {
+                // Adjust for West Africa Time (GMT+1)
+                const hour = (peakAnalysis[0]._id + 1) % 24;
+                const ampm = hour >= 12 ? 'PM' : 'AM';
+                const displayHour = hour % 12 || 12;
+                peakHourText = `${displayHour}-${(hour + 2) % 12 || 12} ${ampm}`;
+
+                // Calculate % Increase from min reported average to peak average
+                if (peakAnalysis.length > 1) {
+                    const sortedByFare = [...peakAnalysis].sort((a, b) => a.avgFare - b.avgFare);
+                    const minAvg = sortedByFare[0].avgFare;
+                    const maxAvg = peakAnalysis[0].avgFare;
+
+                    if (minAvg > 0) {
+                        const calculatedSurge = Math.round(((maxAvg - minAvg) / minAvg) * 100);
+                        if (calculatedSurge > 0 && calculatedSurge < 100) {
+                            surgePercent = calculatedSurge;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dynamic Time Savings (Distance-based heuristic)
+        const distKm = topRouteResult.length > 0 && topRouteResult[0].avgDist ? (topRouteResult[0].avgDist / 1000) : 5;
+        const timeSavings = Math.max(5, Math.min(30, Math.round(distKm * 2.5)));
+
+        // Traffic Alert (Last 2 hours in location)
+        const twoHoursAgo = new Date(Date.now() - 7200000);
+        const trafficPipeline = [];
+        if (geoNearStage) trafficPipeline.push(geoNearStage);
+        trafficPipeline.push(
+            { $match: { timestamp: { $gte: twoHoursAgo }, isFlagged: false } },
+            { $group: { _id: "$destination.raw", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 1 }
+        );
+
+        const trafficResult = await contributionModel.aggregate(trafficPipeline);
+        const trafficLocation = trafficResult.length > 0
+            ? trafficResult[0]._id.split(',')[0]
+            : (lng && lat ? "nearby routes" : "Third Mainland Bridge");
+
+        const peakTarget = topRoute ? topRoute.to.split(',')[0] : "Lekki";
+        const fastTarget = topRoute ? topRoute.to.split(',')[0] : "Marina";
 
         const insights = [
             {
                 id: '1',
-                title: 'Community Activity 📊',
-                body: `${contributionsToday} fares shared today by ${activeContributors.length} helpers like you!`,
+                title: 'Peak hour alert',
+                body: `Fares to ${peakTarget} are trending ${surgePercent}% higher during peak hours (${peakHourText}).`,
                 image: 'shine'
             },
             {
                 id: '2',
-                title: 'Hot Route Right Now 🔥',
-                body: `${routeName} is seeing high activity. Check for current fare updates!`,
+                title: 'Fast route',
+                body: `Keke to ${fastTarget} is typically ${timeSavings} mins faster than bus during weekdays.`,
                 image: 'shine'
             },
             {
                 id: '3',
-                title: 'Contributor Bonus 🌟',
-                body: 'Help your community by verifying a nearby route to earn extra trust points.',
+                title: 'Traffic update',
+                body: `Heavy activity reported towards ${trafficLocation}. Consider alternative routes.`,
                 image: 'shine'
             }
         ];
