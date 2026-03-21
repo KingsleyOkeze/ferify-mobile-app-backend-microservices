@@ -14,14 +14,14 @@ const userAuth = async (req, res, next) => {
         if (queryToken) console.log('[AUTH] Found Query token');
 
         if (!authHeader && !queryToken) {
-            console.log("❌ [AUTH] No token provided!");
+            console.log("[AUTH] No token provided!");
             return res.status(401).json({ error: "No token provided!" });
         }
 
         const token = authHeader ? authHeader.replace("Bearer ", "") : queryToken;
 
         const decoded = jwt.verify(token, accessTokenSecret);
-        console.log(`✅ [AUTH] Token verified for user: ${decoded.userId}`);
+        console.log(`[AUTH] Token verified for user: ${decoded.userId}`);
 
         if (!decoded || !decoded.userId) {
             return res.status(401).json({ error: "Session token expired or invalid!" });

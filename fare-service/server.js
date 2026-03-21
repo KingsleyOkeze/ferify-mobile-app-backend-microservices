@@ -33,13 +33,3 @@ app.use(fareRoutes);
 
 connectDb(server, PORT);
 
-
-
-
-
-
-
-
-
-// Example usage
-// getDistance("Yaba, Lagos", "Ikeja, Lagos");

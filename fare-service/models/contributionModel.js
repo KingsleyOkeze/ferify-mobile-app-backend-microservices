@@ -66,6 +66,18 @@ const contributionSchema = new mongoose.Schema({
             type: [Number], // [longitude, latitude]
             default: [0, 0]
         }
+    },
+    isVerified: {
+        type: Boolean,
+        default: false
+    },
+    isLive: {
+        type: Boolean,
+        default: false
+    },
+    accuracyMetadata: {
+        distanceToOrigin: Number, // In meters
+        tripLength: Number       // In meters
     }
 }, { timestamps: true });
 

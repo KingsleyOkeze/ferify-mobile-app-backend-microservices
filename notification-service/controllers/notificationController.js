@@ -55,12 +55,12 @@ const createInternalNotification = async (req, res) => {
 
         await notification.save();
 
-        // 1. Emit via socket for foreground users
+        // Emit via socket for foreground users
         if (req.io) {
             req.io.to(userId).emit('new_notification', notification);
         }
 
-        // 2. Dispatch Background Push Notification
+        // Dispatch Background Push Notification
         // Only if user is NOT actively using the app (handled by mobile app but we send anyway as a fallback)
         // And if the user has enabled notifications for this category
         (async () => {

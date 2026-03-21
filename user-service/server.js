@@ -13,10 +13,6 @@ const { connectDb } = require("./configs/configs");
 const { initializeJobs } = require("./jobs/scheduler");
 
 const PORT = process.env.PORT || 5001;
-app.use((req, res, next) => {
-    console.log(`Incoming Request: ${req.method} ${req.url}`);
-    next();
-});
 
 connectDb(app, PORT);
 app.use(express.json({ limit: '1mb' }));

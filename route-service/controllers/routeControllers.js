@@ -281,7 +281,47 @@ const routeBreakdownFunction = async (req, res) => {
     }
 };
 
+const getPlaceCoordinatesFunction = async (req, res) => {
+    const { placeId } = req.query;
+    if (!placeId) {
+        return res.status(400).json({ error: "placeId is required" });
+    }
+
+    try {
+        // Check cache first
+        const cacheKey = `coords:${placeId}`;
+        const cached = await client.get(cacheKey);
+        if (cached) {
+            return res.status(200).json(JSON.parse(cached));
+        }
+
+        const detailsUrl = "https://maps.googleapis.com/maps/api/place/details/json";
+        const response = await googleMapsApi.get(detailsUrl, {
+            params: {
+                place_id: placeId,
+                fields: 'geometry',
+            }
+        });
+
+        if (response.data.status !== 'OK') {
+            throw new Error(`Google Places Details API error: ${response.data.status}`);
+        }
+
+        const location = response.data.result.geometry.location;
+        const result = { lat: location.lat, lng: location.lng };
+
+        // Cache for 30 days (coordinates don't change often)
+        await client.setEx(cacheKey, 2592000, JSON.stringify(result));
+
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("Error fetching place coordinates:", error.message);
+        return res.status(500).json({ error: "Failed to resolve coordinates" });
+    }
+};
+
 module.exports = {
     placeSearchFunction,
-    routeBreakdownFunction
+    routeBreakdownFunction,
+    getPlaceCoordinatesFunction
 }

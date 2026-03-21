@@ -16,23 +16,87 @@ const filterOutliersIQR = (data) => {
     return data.filter(x => x >= lowerBound && x <= upperBound);
 };
 
+const haversineDistance = (coords1, coords2) => {
+    const R = 6371; // km
+    const dLat = (coords2.lat - coords1.lat) * Math.PI / 180;
+    const dLon = (coords2.lng - coords1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(coords1.lat * Math.PI / 180) * Math.cos(coords2.lat * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c * 1000; // meters
+};
+
 const submitFarePriceFunction = async (req, res) => {
     try {
         const {
             userId,
-            fromLocation, // Object { raw, placeId }
-            toLocation,   // Object { raw, placeId }
+            fromLocation,
+            toLocation,
             vehicleType,
             fareAmount,
             timeOfDay,
             conditions,
             notes,
-            location, // New: { coordinates: [lng, lat] }
-            contributionType // New: 'fare_submission' or 'route_confirmation'
+            location, // { coordinates: [lng, lat] }
+            contributionType
         } = req.body;
 
         if (!userId || !fromLocation || !toLocation || !vehicleType || !fareAmount || !timeOfDay) {
             return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        // --- CITY GUARD: GEOGRAPHICAL VALIDATION ---
+        let isVerified = false;
+        let isLive = false;
+        let distanceToOrigin = 0;
+        let tripLength = 0;
+
+        try {
+            const routeServiceUrl = process.env.ROUTE_SERVICE_URL || 'http://localhost:5001';
+            
+            // 1. Resolve Trip Coordinates
+            const [originCoordsRes, destCoordsRes] = await Promise.all([
+                internalApi.get(`${routeServiceUrl}/api/route/place-coordinates`, { params: { placeId: fromLocation.placeId } }),
+                internalApi.get(`${routeServiceUrl}/api/route/place-coordinates`, { params: { placeId: toLocation.placeId } })
+            ]);
+
+            const originCoords = originCoordsRes.data;
+            const destCoords = destCoordsRes.data;
+
+            // 2. Calculate Trip Length (Intra-city Check)
+            tripLength = haversineDistance(originCoords, destCoords);
+            if (tripLength > 150000) { // 150km limit for commuter fares
+                console.warn(`REJECTED: Trip length too long (${(tripLength/1000).toFixed(1)}km) for ${fromLocation.raw} -> ${toLocation.raw}`);
+                return res.status(400).json({ 
+                    error: "This route is too long for a local transit fare. Ferify currently only supports intra-city commuting." 
+                });
+            }
+
+            // 3. User Proximity Check (Spam/Remote Check)
+            if (location && location.coordinates && location.coordinates[0] !== 0) {
+                const userCoords = { lng: location.coordinates[0], lat: location.coordinates[1] };
+                distanceToOrigin = haversineDistance(userCoords, originCoords);
+
+                if (distanceToOrigin > 100000) { // 100km limit for remote submissions
+                    console.warn(`REJECTED: User is too far (${(distanceToOrigin/1000).toFixed(1)}km) from trip origin.`);
+                    return res.status(400).json({ 
+                        error: "You are too far from this location to report a live fare. Please only report fares for areas you have recently visited." 
+                    });
+                }
+
+                // Tiered Trust
+                if (distanceToOrigin < 5000) { // Within 5km
+                    isVerified = true;
+                    isLive = true;
+                } else if (distanceToOrigin < 30000) { // Within 30km (City Level)
+                    isVerified = true;
+                    isLive = false; // Not "Live" real-time evidence, but a verified historical contribution
+                }
+            }
+        } catch (geoError) {
+            console.error("City Guard Validation failed (Failing to unverified):", geoError.message);
+            // We allow the contribution to pass but it stays unverified
         }
 
         const newContribution = new contributionModel({
@@ -44,7 +108,13 @@ const submitFarePriceFunction = async (req, res) => {
             timeOfDay,
             conditions,
             notes,
-            location: location || { type: 'Point', coordinates: [0, 0] }
+            location: location || { type: 'Point', coordinates: [0, 0] },
+            isVerified,
+            isLive,
+            accuracyMetadata: {
+                distanceToOrigin,
+                tripLength
+            }
         });
 
         await newContribution.save();
@@ -118,7 +188,7 @@ const submitFarePriceFunction = async (req, res) => {
 
                             await internalApi.post(`${notifServiceUrl}/notification/push/send`, {
                                 tokens: contributorTokens,
-                                title: "Community Impact! 🌟",
+                                title: "Community Impact!",
                                 body: `Your shared fare for ${fromName} → ${toName} was just confirmed by another user. Way to help the community!`,
                                 data: { screen: "MyContributionOverviewScreen" }
                             });
@@ -128,7 +198,7 @@ const submitFarePriceFunction = async (req, res) => {
                                 await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
                                     userId: contributorId,
                                     type: 'fare_confirmed',
-                                    title: "Community Impact! 🌟",
+                                    title: "Community Impact!",
                                     description: `Your shared fare for ${fromName} → ${toName} was just confirmed by another user.`,
                                     data: { screen: "MyContributionOverviewScreen" }
                                 });
@@ -452,7 +522,7 @@ const getCommunityInsightsFunction = async (req, res) => {
         const topRoutePipeline = [];
         if (geoNearStage) topRoutePipeline.push(geoNearStage);
         topRoutePipeline.push(
-            { $match: { timestamp: { $gte: today }, isFlagged: false } },
+            { $match: { timestamp: { $gte: today }, isFlagged: false, isVerified: true } },
             {
                 $group: {
                     _id: { from: "$origin.raw", to: "$destination.raw" },
@@ -476,7 +546,8 @@ const getCommunityInsightsFunction = async (req, res) => {
                     $match: {
                         "origin.raw": topRoute.from,
                         "destination.raw": topRoute.to,
-                        isFlagged: false
+                        isFlagged: false,
+                        isVerified: true
                     }
                 },
                 {
@@ -521,7 +592,7 @@ const getCommunityInsightsFunction = async (req, res) => {
         const trafficPipeline = [];
         if (geoNearStage) trafficPipeline.push(geoNearStage);
         trafficPipeline.push(
-            { $match: { timestamp: { $gte: twoHoursAgo }, isFlagged: false } },
+            { $match: { timestamp: { $gte: twoHoursAgo }, isFlagged: false, isLive: true } },
             { $group: { _id: "$destination.raw", count: { $sum: 1 } } },
             { $sort: { count: -1 } },
             { $limit: 1 }
