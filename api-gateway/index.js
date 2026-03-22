@@ -35,6 +35,15 @@ app.use(limiter);
 // Middleware to Inject the Internal Secret Header
 app.use(internalSecretHeader);
 
+// Root Health Check Route (Used to wake up Render or verify life)
+app.get("/", (req, res) => {
+    return res.json({ 
+        message: "Ferify Backend is Online", 
+        timestamp: new Date().toISOString(),
+        // version: "1.0.0"
+    });
+});
+
 // Routes - User Service (Public Auth)
 app.use("/api/user/auth", createProxyMiddleware({
     target: process.env.USER_SERVICE_URL,
