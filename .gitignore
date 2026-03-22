@@ -8,7 +8,10 @@ build
 /coverage
 
 # --- SENSITIVE DATA (CRITICAL) ---
-# Exclude ALL .env files in ALL subfolders
+# Exclude ALL .env files and deployment environment files
 # This prevents accidentally committing API keys, secrets, or DB credentials.
 **/.env
 .env.*
+env.deployment
+*.env
+*.template

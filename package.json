@@ -1,0 +1,11 @@
+{
+  "name": "ferify-backend-monolith",
+  "version": "1.0.0",
+  "description": "Modular Monolith orchestrator for Ferify microservices",
+  "main": "CombinedServer.js",
+  "scripts": {
+    "start": "node CombinedServer.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
