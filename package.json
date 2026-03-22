@@ -4,7 +4,9 @@
   "description": "Modular Monolith orchestrator for Ferify microservices",
   "main": "CombinedServer.js",
   "scripts": {
-    "start": "node CombinedServer.js"
+    "start": "node CombinedServer.js",
+    "install-all": "npm install --prefix api-gateway && npm install --prefix user-service && npm install --prefix fare-service && npm install --prefix route-service && npm install --prefix notification-service",
+    "postinstall": "npm run install-all"
   },
   "author": "",
   "license": "ISC"
