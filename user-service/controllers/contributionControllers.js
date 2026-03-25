@@ -142,7 +142,7 @@ const recordContribution = async (req, res) => {
 
                 // Notify user about new badge
                 try {
-                    await internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/api/notification/internal/create`, {
+                    await internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/history/internal/create`, {
                         userId,
                         type: 'earned_badge',
                         title: milestone.title,
@@ -157,7 +157,7 @@ const recordContribution = async (req, res) => {
 
         // Notify user about points earned
         try {
-            await internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/api/notification/internal/create`, {
+            await internalApi.post(`${process.env.NOTIFICATION_SERVICE_URL}/user-notification-history/internal/create`, {
                 userId,
                 type: 'points_earned',
                 title: 'Points Earned! ⭐',
