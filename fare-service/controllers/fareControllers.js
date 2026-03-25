@@ -195,7 +195,7 @@ const submitFarePriceFunction = async (req, res) => {
 
                             // Create internal notification records for contributors
                             for (const contributorId of contributorIds) {
-                                await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+                                await internalApi.post(`${notifServiceUrl}/user-notification-history/internal/create`, {
                                     userId: contributorId,
                                     type: 'fare_confirmed',
                                     title: "Community Impact!",
@@ -236,7 +236,7 @@ const submitFarePriceFunction = async (req, res) => {
                     .catch(err => console.error(`[MIRROR] Failed to record contribution for user ${userId}:`, err.message));
 
                 // Create internal notification 
-                await internalApi.post(`${notifServiceUrl}/api/notification/internal/create`, {
+                await internalApi.post(`${notifServiceUrl}/user-notification-history/internal/create`, {
                     userId: userId,
                     type: 'fare_verified',
                     title: "Fare Verified ✅",

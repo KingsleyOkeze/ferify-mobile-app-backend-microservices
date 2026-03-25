@@ -8,10 +8,12 @@ const internalApi = require('../configs/internalApi');
 const getNotifications = async (req, res) => {
     try {
         const userId = req.headers['x-user-id'];
+        console.log(`[GET_NOTIFICATIONS] Fetching for userId: ${userId}`);
         if (!userId) return res.status(401).json({ error: "User ID not found in headers" });
         const notifications = await notificationModel.find({ userId })
             .sort({ createdAt: -1 })
             .limit(50);
+        console.log(`[GET_NOTIFICATIONS] Found ${notifications.length} notifications`);
 
         res.status(200).json({ notifications });
     } catch (error) {
@@ -44,6 +46,7 @@ const markAsRead = async (req, res) => {
 const createInternalNotification = async (req, res) => {
     try {
         const { userId, type, title, description, data } = req.body;
+        console.log(`[CREATE_INTERNAL_NOTIF] Received request for userId: ${userId}, type: ${type}`);
 
         const notification = new notificationModel({
             userId,
