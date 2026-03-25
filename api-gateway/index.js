@@ -37,8 +37,8 @@ app.use(internalSecretHeader);
 
 // Root Health Check Route (Used to wake up Render or verify life)
 app.get("/", (req, res) => {
-    return res.json({ 
-        message: "Ferify Backend is Online", 
+    return res.json({
+        message: "Ferify Backend is Online",
         timestamp: new Date().toISOString(),
         // version: "1.0.0"
     });

@@ -1,46 +1,62 @@
-const nodemailer = require('nodemailer');
-require('dotenv').config();
+const axios = require('axios');
 
 /**
- * Email Transporter Configuration
+ * emailingFunction - API-Based Email (Mailjet V3.1)
  * 
- * NOTE: We use port 587 (STARTTLS) instead of the default 465.
- * This is because many free hosting providers (like Koyeb) allow port 587 
- * while blocking others. On Render's free tier, all SMTP ports are blocked, 
- * so it will only work on Koyeb or a paid Render service.
+ * NOTE: Render's free tier blocks all SMTP ports (587, 465). 
+ * We use the Mailjet API which uses standard HTTPS (Port 443).
+ * Mailjet is very developer-friendly and allows sending from a verified Gmail 
+ * without requiring a custom domain for testing/portfolio projects.
  */
-let mailTransporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // true for port 465, false for port 587
-    auth: {
-        user: process.env.ADMIN_EMAIL,
-        pass: process.env.ADMIN_GMAIL_PASSCODE // Always use a 16-character Google App Password
-    },
-    tls: {
-        rejectUnauthorized: false
-    }
-});
-
 const emailingFunction = async (sendTo, emailSubject, emailHtml) => {
     try {
-        let mailDetails = {
-            from: `"Ferify mobile app" <${process.env.ADMIN_EMAIL}>`,
-            to: sendTo,
-            subject: emailSubject,
-            html: emailHtml
+        const apiKey = process.env.MAILJET_API_KEY;
+        const secretKey = process.env.MAILJET_SECRET_KEY;
+
+        if (!apiKey || !secretKey) {
+            console.error('[EMAIL] Mailjet API credentials missing in environment variables!');
+            return { message: 'Failed to send email: Credentials missing' };
+        }
+
+        // Mailjet API V3.1 Payload
+        const mailDetails = {
+            "Messages": [
+                {
+                    "From": {
+                        "Email": process.env.ADMIN_EMAIL,
+                        "Name": "Ferify Team"
+                    },
+                    "To": [
+                        {
+                            "Email": sendTo,
+                            "Name": "User"
+                        }
+                    ],
+                    "Subject": emailSubject,
+                    "HTMLPart": emailHtml
+                }
+            ]
         };
 
-        const info = await mailTransporter.sendMail(mailDetails);
-        console.log('Email sent successfully:', info.response);
-        return { message: 'Email sent successfully' };
+        console.log(`[EMAIL] Attempting to send email to ${sendTo} via Mailjet API...`);
+
+        // Use Basic Auth: btoa(apiKey:secretKey) or let axios handle it
+        const auth = Buffer.from(`${apiKey}:${secretKey}`).toString('base64');
+
+        const response = await axios.post('https://api.mailjet.com/v3.1/send', mailDetails, {
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('[EMAIL] Sent successfully. Mailjet Message ID:', response.data.Messages[0].Status);
+        return { message: 'Email sent successfully', response: response.data };
 
     } catch (error) {
-        console.error('Error Occurs', error);
-        return { message: 'Failed to send email', error };
+        console.error('[EMAIL] Mailjet Error:', error.response ? error.response.data : error.message);
+        return { message: 'Failed to send email', error: error.message };
     }
 };
-
-
 
 module.exports = emailingFunction;

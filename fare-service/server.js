@@ -32,4 +32,3 @@ app.use(internalSecretKeyCheckMiddleware);
 app.use(fareRoutes);
 
 connectDb(server, PORT);
-
