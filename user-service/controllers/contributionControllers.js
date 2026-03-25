@@ -161,7 +161,7 @@ const recordContribution = async (req, res) => {
                 userId,
                 type: 'points_earned',
                 title: 'Points Earned! ⭐',
-                description: `You just earned ${points || 10} points for your ${type.replace('_', ' ')}.`,
+                description: `You just earned ${points || 'some'} points for your ${type.replace('_', ' ')}.`,
                 data: { points, type }
             });
         } catch (err) {

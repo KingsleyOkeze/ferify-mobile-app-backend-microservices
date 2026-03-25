@@ -257,7 +257,7 @@ const submitFarePriceFunction = async (req, res) => {
 };
 
 const getNearbyFaresFunction = async (req, res) => {
-    try {
+   try {
         const { lng, lat, radius = 5000 } = req.query; // Default 5km radius
 
         let pipeline = [
@@ -443,7 +443,7 @@ const getFareEstimateFunction = async (req, res) => {
 };
 
 const getPopularRoutesFunction = async (req, res) => {
-    try {
+   try {
         // Aggregate top 5 routes by contribution count in the last 24h
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -500,7 +500,7 @@ const getPopularRoutesFunction = async (req, res) => {
 };
 
 const getCommunityInsightsFunction = async (req, res) => {
-    try {
+     try {
         const { lng, lat } = req.query;
         const today = new Date();
         today.setHours(0, 0, 0, 0);

@@ -87,13 +87,21 @@ app.use("/api/user/notification-settings", userAuth, createProxyMiddleware({
     changeOrigin: true,
 }));
 
-// Routes - Fare Service (Private)
-app.use("/api/fare", userAuth, createProxyMiddleware({
+const fareProxy = createProxyMiddleware({
     target: process.env.FARE_SERVICE_URL,
     pathRewrite: { '^/api/fare': '' },
     changeOrigin: true,
-    ws: true // Enable WebSocket proxy
-}));
+    ws: true,
+    onProxyReq: (proxyReq, req, res) => {
+        console.log(`[GATEWAY] Proxying ${req.method} ${req.url} to Fare Service`);
+    },
+    onError: (err, req, res) => {
+        console.error('[FARE Proxy Error]', err.message);
+    }
+});
+
+// Routes - Fare Service (Private)
+app.use("/api/fare", userAuth, fareProxy);
 
 const notificationProxy = createProxyMiddleware({
     target: process.env.NOTIFICATION_SERVICE_URL,
@@ -111,6 +119,9 @@ const notificationProxy = createProxyMiddleware({
     },
     onError: (err, req, res) => {
         console.error('[WS Proxy Error]', err);
+    },
+    onProxyReq: (proxyReq, req, res) => {
+        console.log(`[GATEWAY] Proxying ${req.method} ${req.url} to Notification Service`);
     },
     logger: console, // Added for debugging
 });
@@ -134,45 +145,53 @@ app.use("/api/route", userAuth, createProxyMiddleware({
 
 
 const server = app.listen(PORT, () => {
-    console.log(`API GATEWAY LISTENING ON PORT ${PORT}`)
-})
+    console.log(`API GATEWAY LISTENING ON PORT ${PORT}`);
+});
 
 // Correctly handle WebSocket upgrades for proxied services with manual auth & rewrite
 server.on('upgrade', (req, socket, head) => {
     const parsedUrl = url.parse(req.url, true);
 
     if (parsedUrl.pathname && parsedUrl.pathname.startsWith('/api/notification')) {
-        console.log(`[WS Upgrade] Handling notification socket: ${req.url}`);
-
-        // WebSocket Upgrade requests bypass Express middleware, so we must auth manually
-        const token = parsedUrl.query.token;
-        if (!token) {
-            console.log('[WS Upgrade] Access Denied: No token in query string');
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-            return;
-        }
-
-        try {
-            const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
-            console.log(`[WS Upgrade] Authenticated user: ${decoded.userId}`);
-
-            // Manually inject headers for downstream services
-            req.headers['x-user-id'] = decoded.userId;
-            req.headers['x-internal-secret'] = INTERNAL_SECRET_KEY;
-
-            console.log(`[WS Upgrade] Original request URL: ${req.url}`);
-
-            // Apply path rewrite manually as notificationProxy.upgrade might not do it automatically from the raw req
-            req.url = req.url.replace(/^\/api\/notification/, '');
-
-            console.log(`[WS Upgrade] Rewritten request URL for downstream: ${req.url}`);
-
-            notificationProxy.upgrade(req, socket, head);
-        } catch (err) {
-            console.log('[WS Upgrade] Auth Failed:', err.message);
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-        }
+        handleUpgrade(notificationProxy, req, socket, head, /^\/api\/notification/);
+    } else if (parsedUrl.pathname && parsedUrl.pathname.startsWith('/api/fare')) {
+        handleUpgrade(fareProxy, req, socket, head, /^\/api\/fare/);
     }
 });
+
+// Helper to handle WebSocket upgrades with manual auth & rewrite
+function handleUpgrade(proxy, req, socket, head, rewriteRegex) {
+    const parsedUrl = url.parse(req.url, true);
+    console.log(`[WS Upgrade] Handling socket: ${req.url}`);
+
+    // WebSocket Upgrade requests bypass Express middleware, so we must auth manually
+    const token = parsedUrl.query.token;
+    if (!token) {
+        console.log('[WS Upgrade] Access Denied: No token in query string');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+
+    try {
+        const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
+        console.log(`[WS Upgrade] Authenticated user: ${decoded.userId}`);
+
+        // Manually inject headers for downstream services
+        req.headers['x-user-id'] = decoded.userId;
+        req.headers['x-internal-secret'] = INTERNAL_SECRET_KEY;
+
+        console.log(`[WS Upgrade] Original request URL: ${req.url}`);
+
+        // Apply path rewrite manually
+        req.url = req.url.replace(rewriteRegex, '');
+
+        console.log(`[WS Upgrade] Rewritten request URL for downstream: ${req.url}`);
+
+        proxy.upgrade(req, socket, head);
+    } catch (err) {
+        console.log('[WS Upgrade] Auth Failed:', err.message);
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+    }
+}

@@ -106,10 +106,10 @@ const createInternalNotification = async (req, res) => {
             }
         })();
 
-        res.status(201).json({ notification });
+        return res.status(201).json({ notification });
     } catch (error) {
         console.error('Error creating internal notification:', error);
-        res.status(500).json({ error: 'Failed to create notification' });
+        return res.status(500).json({ error: 'Failed to create notification' });
     }
 };
 
